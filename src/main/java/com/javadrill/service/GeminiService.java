@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -14,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.javadrill.config.AppProperties;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -25,16 +25,38 @@ public class GeminiService {
     private final AppProperties props;
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
-    private final AtomicInteger keyIndex = new AtomicInteger(0);
+    
+    static class ApiKeyState {
+      String key;
+      boolean blocked = false;
+      long retryAfter = 0;
 
-    private String getNextApiKey() {
+      ApiKeyState(String key) {
+          this.key = key;
+      }
+
+      boolean isAvailable() {
+          return !blocked || System.currentTimeMillis() > retryAfter;
+      }
+  }
+    private final List<ApiKeyState> keyPool = new ArrayList<>();
+
+    @PostConstruct
+    public void initKeys() {
         List<String> keys = props.getGemini().getApiKeys();
         if (keys == null || keys.isEmpty()) {
             throw new RuntimeException("No Gemini API keys configured");
         }
-        int index = Math.abs(keyIndex.getAndIncrement() % keys.size());
-        return keys.get(index);
+        keys.forEach(k -> keyPool.add(new ApiKeyState(k)));
     }
+    private ApiKeyState getAvailableKey() {
+      for (ApiKeyState key : keyPool) {
+          if (key.isAvailable()) {
+              return key;
+          }
+      }
+      return null;
+  }
     private static final List<String> CATEGORIES = List.of(
             "java_core", "oops", "multithreading", "spring",
             "system_design", "problem_solving", "behavioral"
@@ -61,101 +83,138 @@ public class GeminiService {
     public String callGemini(String userPrompt, String systemPrompt) {
         return callGeminiWithTemp(userPrompt, systemPrompt, 0.7);
     }
-    public String callGeminiWithTemp(String userPrompt, String systemPrompt, double temperature) {
+  public String callGeminiWithTemp(String userPrompt, String systemPrompt, double temperature) {
 
-      int totalKeys = props.getGemini().getApiKeys().size();
-      Exception lastException = null;
+    Exception lastException = null;
 
-      for (int attempt = 0; attempt < totalKeys; attempt++) {
-          try {
-              var contents = new ArrayList<Map<String, Object>>();
+    int attempts = 0;
+    int maxAttempts = keyPool.size() * 2; // allow retries
 
-              // System prompt
-              if (systemPrompt != null && !systemPrompt.isBlank()) {
-                  contents.add(Map.of("role", "user",
-                          "parts", List.of(Map.of("text", systemPrompt))));
-                  contents.add(Map.of("role", "model",
-                          "parts", List.of(Map.of("text", "Understood. I will follow these instructions."))));
-              }
+    while (attempts < maxAttempts) {
+        attempts++;
 
-              contents.add(Map.of("role", "user",
-                      "parts", List.of(Map.of("text", userPrompt))));
+        ApiKeyState keyState = getAvailableKey();
 
-              var body = Map.of(
-                      "contents", contents,
-                      "generationConfig", Map.of(
-                              "maxOutputTokens", 20480,
-                              "temperature", temperature,
-                              "topP", 0.95,
-                              "topK", 40
-                      )
-              );
+        if (keyState == null) {
+            break; // no usable keys
+        }
 
-              // 🔥 Rotate key
-              String apiKey = getNextApiKey();
-              String url = props.getGemini().getUrl() + "?key=" + apiKey;
+        try {
+            var contents = new ArrayList<Map<String, Object>>();
 
-              String responseStr = webClientBuilder.build()
-                      .post().uri(url)
-                      .header("Content-Type", "application/json")
-                      .bodyValue(body)
-                      .retrieve()
-                      .bodyToMono(String.class)
-                      .block();
+            // System prompt
+            if (systemPrompt != null && !systemPrompt.isBlank()) {
+                contents.add(Map.of("role", "user",
+                        "parts", List.of(Map.of("text", systemPrompt))));
+                contents.add(Map.of("role", "model",
+                        "parts", List.of(Map.of("text", "Understood. I will follow these instructions."))));
+            }
 
-              var json = objectMapper.readTree(responseStr);
+            contents.add(Map.of("role", "user",
+                    "parts", List.of(Map.of("text", userPrompt))));
 
-              // 🔥 Handle API error → try next key
-              if (json.has("error")) {
-                  String errMsg = json.get("error").get("message").asText();
-                  log.warn("Gemini API error with key, switching key: {}", errMsg);
-                  lastException = new RuntimeException(errMsg);
-                  continue;
-              }
+            var body = Map.of(
+                    "contents", contents,
+                    "generationConfig", Map.of(
+                            "maxOutputTokens", 20480,
+                            "temperature", temperature,
+                            "topP", 0.95,
+                            "topK", 40
+                    )
+            );
 
-              var candidates = json.path("candidates");
-              if (!candidates.isArray() || candidates.isEmpty()) {
-                  throw new RuntimeException("No response from AI");
-              }
+            // ✅ USE SMART KEY
+            String apiKey = keyState.key;
+            String url = props.getGemini().getUrl() + "?key=" + apiKey;
 
-              var parts = candidates.get(0).path("content").path("parts");
+            String responseStr = webClientBuilder.build()
+                    .post().uri(url)
+                    .header("Content-Type", "application/json")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
 
-              StringBuilder sb = new StringBuilder();
-              for (var part : parts) {
-                  if (part.has("text")) sb.append(part.get("text").asText());
-              }
+            var json = objectMapper.readTree(responseStr);
 
-              String result = sb.toString().trim();
+            // ✅ HANDLE API ERROR PROPERLY
+            if (json.has("error")) {
+                String errMsg = json.get("error").get("message").asText().toLowerCase();
 
-              log.debug("Gemini success using key index: {}", keyIndex.get());
-              return result;
+                log.warn("Gemini API error: {}", errMsg);
 
-          } catch (WebClientResponseException e) {
+                // ❌ INVALID KEY → PERMANENT BLOCK
+                if (errMsg.contains("api key not valid") || errMsg.contains("permission")) {
+                    keyState.blocked = true;
+                    keyState.retryAfter = Long.MAX_VALUE;
+                    log.error("Invalid API key removed permanently");
+                }
+                // ⏳ QUOTA → TEMP BLOCK
+                else if (errMsg.contains("quota") || errMsg.contains("rate")) {
+                    keyState.blocked = true;
+                    keyState.retryAfter = System.currentTimeMillis() + 5 * 60 * 1000;
+                    log.warn("Key quota hit → cooling for 5 min");
+                }
 
-              // 🔥 QUOTA / RATE LIMIT → try next key
-              if (isQuotaStatus(e.getStatusCode().value()) ||
-                  isQuotaMessage(e.getResponseBodyAsString())) {
+                lastException = new RuntimeException(errMsg);
+                continue;
+            }
 
-                  log.warn("Quota hit for one key, switching...");
-                  lastException = e;
-                  continue;
-              }
+            var candidates = json.path("candidates");
 
-              throw e; // other errors
+            // ✅ IMPORTANT: DON'T BREAK LOOP
+            if (!candidates.isArray() || candidates.isEmpty()) {
+                lastException = new RuntimeException("Empty response");
+                continue;
+            }
 
-          } catch (Exception e) {
-              log.warn("Error with one key, trying next: {}", e.getMessage());
-              lastException = e;
-          }
+            var parts = candidates.get(0).path("content").path("parts");
 
-          // 🔥 small delay (important)
-          try { Thread.sleep(200); } catch (InterruptedException ignored) {}
-      }
+            StringBuilder sb = new StringBuilder();
+            for (var part : parts) {
+                if (part.has("text")) sb.append(part.get("text").asText());
+            }
 
-      // ❌ All keys failed
-      throw new GeminiQuotaException("All API keys exhausted", lastException);
-  }
-    public String callGeminiWithTemp1(String userPrompt, String systemPrompt, double temperature) {
+            String result = sb.toString().trim();
+
+            log.debug("Gemini success with key");
+            return result;
+
+        } catch (WebClientResponseException e) {
+
+            String body = e.getResponseBodyAsString().toLowerCase();
+
+            // ⏳ QUOTA
+            if (body.contains("quota") || body.contains("rate")) {
+                keyState.blocked = true;
+                keyState.retryAfter = System.currentTimeMillis() + 24L * 60 * 60 * 1000;
+                log.warn("Quota hit → switching key");
+                lastException = e;
+                continue;
+            }
+
+            // ❌ INVALID KEY
+            if (body.contains("api key not valid") || body.contains("permission")) {
+                keyState.blocked = true;
+                keyState.retryAfter = Long.MAX_VALUE;
+                log.error("Invalid key removed permanently");
+                lastException = e;
+                continue;
+            }
+
+            throw e;
+
+        } catch (Exception e) {
+            log.warn("Error with one key, trying next: {}", e.getMessage());
+            lastException = e;
+        }
+
+        // small delay
+        try { Thread.sleep(200); } catch (InterruptedException ignored) {}
+    }
+
+    throw new GeminiQuotaException("All API keys exhausted", lastException);
+} public String callGeminiWithTemp1(String userPrompt, String systemPrompt, double temperature) {
         try {
             var contents = new ArrayList<Map<String, Object>>();
 
@@ -178,7 +237,7 @@ public class GeminiService {
                             "topK", 40
                     )
             );
-            String apiKey = getNextApiKey();
+            String apiKey = "";
             String url = props.getGemini().getUrl() + "?key=" + apiKey;
 
             String responseStr = webClientBuilder.build()
