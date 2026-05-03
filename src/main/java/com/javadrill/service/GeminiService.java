@@ -421,7 +421,7 @@ public class GeminiService {
     }
 
     private boolean isQuotaStatus(int status) {
-        return status == 429;
+        return status == 429 || status == 403 || status >= 500;
     }
 
     private boolean isQuotaMessage(String message) {
@@ -429,7 +429,7 @@ public class GeminiService {
         String lower = message.toLowerCase();
         return lower.contains("quota") || lower.contains("rate limit")
                 || lower.contains("resource_exhausted") || lower.contains("too many requests")
-                || lower.contains("429");
+                || lower.contains("429") || lower.contains("403");
     }
 
     private String truncate(String value, int max) {
