@@ -17,7 +17,7 @@ public class AppProperties {
 
     @Data
     public static class Gemini {
-        private List<String> apiKeys;
+        private String apiKey;
         private String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
     }
 
@@ -36,7 +36,7 @@ public class AppProperties {
     public static class Cors {
         private List<String> allowedOrigins = List.of(
                 "http://localhost:3000",
-                "http://localhost:5173",
+                "https://javadrill-frontend.vercel.app",
                 "https://javadrill.app"
         );
     }

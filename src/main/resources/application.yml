@@ -17,13 +17,7 @@ spring:
 # ── JavaDrill Config ──
 javadrill:
   gemini:
-    api-keys:
-      - AIzaSyA5ZSxoQwpOY1L0s9tPK7gRxJBRZbLdqv0
-      - AIzaSyAkAY89mhhck93wQVV27bfV_-XT8PPyGU4
-      - AIzaSyBO_vLkhx0pepempVV7A1lSpfb_D2IGGbI
-      - AIzaSyDNGKXdO87UYccq-N_z1JAFVE5jOgCw4mQ
-      - AIzaSyD4onvE_4YukRH7xZKtNPlbke_PbrCTeVA
-      - AIzaSyCOS9XdEWpDOEF6x-UiMxlrQy0g65t01qU
+    api-key: ${GEMINI_API_KEYS}
     url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
 
   firebase:
