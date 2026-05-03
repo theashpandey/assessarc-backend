@@ -38,11 +38,22 @@
     </dependency>
 
     <!-- Firebase Admin SDK (Firestore + Auth) -->
-    <dependency>
-      <groupId>com.google.firebase</groupId>
-      <artifactId>firebase-admin</artifactId>
-      <version>${firebase.version}</version>
-    </dependency>
+ <dependency>
+  <groupId>com.google.firebase</groupId>
+  <artifactId>firebase-admin</artifactId>
+  <version>${firebase.version}</version>
+  <exclusions>
+    <exclusion>
+      <groupId>io.grpc</groupId>
+      <artifactId>grpc-netty-shaded</artifactId>
+    </exclusion>
+  </exclusions>
+</dependency>
+<dependency>
+  <groupId>io.grpc</groupId>
+  <artifactId>grpc-okhttp</artifactId>
+  <version>1.58.0</version>
+</dependency>
 
     <!-- HTTP Client for Gemini API -->
     <dependency>
