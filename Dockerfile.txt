@@ -21,7 +21,7 @@ WORKDIR /app
 
 # Copy jar from build stage
 COPY --from=build /app/target/*.jar app.jar
-
+ENV JAVA_TOOL_OPTIONS="-Dio.netty.handler.ssl.noOpenSsl=true -Dio.netty.transport.noNative=true"
 # Render provides dynamic PORT
 EXPOSE 8080
 

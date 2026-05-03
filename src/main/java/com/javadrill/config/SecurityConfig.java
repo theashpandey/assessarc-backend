@@ -34,6 +34,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/login").permitAll()
                 .requestMatchers("/api/contact").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/api/ping").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(firebaseAuthFilter, UsernamePasswordAuthenticationFilter.class);
