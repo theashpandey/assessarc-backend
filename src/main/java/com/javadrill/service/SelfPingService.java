@@ -4,6 +4,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import lombok.extern.slf4j.Slf4j;
+@Slf4j
 @Component
 public class SelfPingService {
 
@@ -14,9 +16,9 @@ public class SelfPingService {
     public void pingSelf() {
         try {
             restTemplate.getForObject(SELF_URL, String.class);
-            System.out.println("🔁 Self-ping successful");
+            log.info("🔁 Self-ping successful");
         } catch (Exception e) {
-            System.out.println("⚠️ Self-ping failed: " + e.getMessage());
+          log.info("⚠️ Self-ping failed: " + e.getMessage());
         }
     }
 }
