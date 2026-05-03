@@ -1,0 +1,42 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: javadrill-backend
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  jackson:
+    default-property-inclusion: non_null
+
+# ── JavaDrill Config ──
+javadrill:
+  gemini:
+    api-key: AIzaSyA5ZSxoQwpOY1L0s9tPK7gRxJBRZbLdqv0 #AIzaSyAkAY89mhhck93wQVV27bfV_-XT8PPyGU4
+    url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+  firebase:
+    service-account-path: classpath:firebase-service-account.json
+  razorpay:
+    key-id: rzp_live_MBtjXBNmmsRXls
+    key-secret: ao7ZYu0SCWXqy7dDr8HojnAo
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+      - http://localhost:5173
+      - https://javadrill.app
+      - https://www.javadrill.app
+  wallet:
+    signup-bonus: 10
+    price-30min: 5
+    price-60min: 10
+
+logging:
+  level:
+    com.javadrill: DEBUG
+    org.springframework.security: WARN
+    org.springframework.web: WARN
