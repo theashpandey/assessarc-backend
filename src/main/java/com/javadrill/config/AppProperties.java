@@ -17,13 +17,13 @@ public class AppProperties {
 
     @Data
     public static class Gemini {
-        private String apiKey;
+        private List<String> apiKeys;
         private String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
     }
 
     @Data
     public static class Firebase {
-        private String serviceAccountPath = "classpath:firebase-service-account.json";
+        private String serviceAccountPath = "file:/etc/secrets/firebase-service-account.json";
     }
 
     @Data

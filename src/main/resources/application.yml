@@ -12,24 +12,34 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   jackson:
-    default-property-inclusion: non_null
+    default-property-inclusion: NON_NULL
 
 # ── JavaDrill Config ──
 javadrill:
   gemini:
-    api-key: AIzaSyA5ZSxoQwpOY1L0s9tPK7gRxJBRZbLdqv0 #AIzaSyAkAY89mhhck93wQVV27bfV_-XT8PPyGU4
+    api-keys:
+      - AIzaSyA5ZSxoQwpOY1L0s9tPK7gRxJBRZbLdqv0
+      - AIzaSyAkAY89mhhck93wQVV27bfV_-XT8PPyGU4
+      - AIzaSyBO_vLkhx0pepempVV7A1lSpfb_D2IGGbI
+      - AIzaSyDNGKXdO87UYccq-N_z1JAFVE5jOgCw4mQ
+      - AIzaSyD4onvE_4YukRH7xZKtNPlbke_PbrCTeVA
+      - AIzaSyCOS9XdEWpDOEF6x-UiMxlrQy0g65t01qU
     url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+
   firebase:
     service-account-path: file:/etc/secrets/firebase-service-account.json
+
   razorpay:
     key-id: rzp_live_MBtjXBNmmsRXls
     key-secret: ao7ZYu0SCWXqy7dDr8HojnAo
+
   cors:
     allowed-origins:
       - http://localhost:3000
       - http://localhost:5173
       - https://javadrill.app
       - https://javadrill-frontend.vercel.app
+
   wallet:
     signup-bonus: 10
     price-30min: 5

@@ -1,15 +1,21 @@
 package com.javadrill.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.javadrill.config.AppProperties;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
-import java.util.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.javadrill.config.AppProperties;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
@@ -19,7 +25,16 @@ public class GeminiService {
     private final AppProperties props;
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
+    private final AtomicInteger keyIndex = new AtomicInteger(0);
 
+    private String getNextApiKey() {
+        List<String> keys = props.getGemini().getApiKeys();
+        if (keys == null || keys.isEmpty()) {
+            throw new RuntimeException("No Gemini API keys configured");
+        }
+        int index = Math.abs(keyIndex.getAndIncrement() % keys.size());
+        return keys.get(index);
+    }
     private static final List<String> CATEGORIES = List.of(
             "java_core", "oops", "multithreading", "spring",
             "system_design", "problem_solving", "behavioral"
@@ -46,8 +61,101 @@ public class GeminiService {
     public String callGemini(String userPrompt, String systemPrompt) {
         return callGeminiWithTemp(userPrompt, systemPrompt, 0.7);
     }
-
     public String callGeminiWithTemp(String userPrompt, String systemPrompt, double temperature) {
+
+      int totalKeys = props.getGemini().getApiKeys().size();
+      Exception lastException = null;
+
+      for (int attempt = 0; attempt < totalKeys; attempt++) {
+          try {
+              var contents = new ArrayList<Map<String, Object>>();
+
+              // System prompt
+              if (systemPrompt != null && !systemPrompt.isBlank()) {
+                  contents.add(Map.of("role", "user",
+                          "parts", List.of(Map.of("text", systemPrompt))));
+                  contents.add(Map.of("role", "model",
+                          "parts", List.of(Map.of("text", "Understood. I will follow these instructions."))));
+              }
+
+              contents.add(Map.of("role", "user",
+                      "parts", List.of(Map.of("text", userPrompt))));
+
+              var body = Map.of(
+                      "contents", contents,
+                      "generationConfig", Map.of(
+                              "maxOutputTokens", 20480,
+                              "temperature", temperature,
+                              "topP", 0.95,
+                              "topK", 40
+                      )
+              );
+
+              // 🔥 Rotate key
+              String apiKey = getNextApiKey();
+              String url = props.getGemini().getUrl() + "?key=" + apiKey;
+
+              String responseStr = webClientBuilder.build()
+                      .post().uri(url)
+                      .header("Content-Type", "application/json")
+                      .bodyValue(body)
+                      .retrieve()
+                      .bodyToMono(String.class)
+                      .block();
+
+              var json = objectMapper.readTree(responseStr);
+
+              // 🔥 Handle API error → try next key
+              if (json.has("error")) {
+                  String errMsg = json.get("error").get("message").asText();
+                  log.warn("Gemini API error with key, switching key: {}", errMsg);
+                  lastException = new RuntimeException(errMsg);
+                  continue;
+              }
+
+              var candidates = json.path("candidates");
+              if (!candidates.isArray() || candidates.isEmpty()) {
+                  throw new RuntimeException("No response from AI");
+              }
+
+              var parts = candidates.get(0).path("content").path("parts");
+
+              StringBuilder sb = new StringBuilder();
+              for (var part : parts) {
+                  if (part.has("text")) sb.append(part.get("text").asText());
+              }
+
+              String result = sb.toString().trim();
+
+              log.debug("Gemini success using key index: {}", keyIndex.get());
+              return result;
+
+          } catch (WebClientResponseException e) {
+
+              // 🔥 QUOTA / RATE LIMIT → try next key
+              if (isQuotaStatus(e.getStatusCode().value()) ||
+                  isQuotaMessage(e.getResponseBodyAsString())) {
+
+                  log.warn("Quota hit for one key, switching...");
+                  lastException = e;
+                  continue;
+              }
+
+              throw e; // other errors
+
+          } catch (Exception e) {
+              log.warn("Error with one key, trying next: {}", e.getMessage());
+              lastException = e;
+          }
+
+          // 🔥 small delay (important)
+          try { Thread.sleep(200); } catch (InterruptedException ignored) {}
+      }
+
+      // ❌ All keys failed
+      throw new GeminiQuotaException("All API keys exhausted", lastException);
+  }
+    public String callGeminiWithTemp1(String userPrompt, String systemPrompt, double temperature) {
         try {
             var contents = new ArrayList<Map<String, Object>>();
 
@@ -70,8 +178,8 @@ public class GeminiService {
                             "topK", 40
                     )
             );
-
-            String url = props.getGemini().getUrl() + "?key=" + props.getGemini().getApiKey();
+            String apiKey = getNextApiKey();
+            String url = props.getGemini().getUrl() + "?key=" + apiKey;
 
             String responseStr = webClientBuilder.build()
                     .post().uri(url)
@@ -123,6 +231,7 @@ public class GeminiService {
             throw new RuntimeException("AI service unavailable: " + e.getMessage(), e);
         }
     }
+    
 
     /**
      * Parse resume — returns concise summary for question generation
