@@ -37,6 +37,8 @@ public class AppProperties {
         private List<String> allowedOrigins = List.of(
                 "http://localhost:3000",
                 "https://javadrill-frontend.vercel.app",
+                "https://javadrill.app",
+                "https://www.javadrill.app",
                 "https://javadrill.onrender.com"
         );
     }

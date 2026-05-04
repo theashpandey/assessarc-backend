@@ -33,6 +33,8 @@ javadrill:
       - http://localhost:5173
       - https://javadrill.onrender.com
       - https://javadrill-frontend.vercel.app
+      - https://javadrill.app
+      - https://www.javadrill.app
 
   wallet:
     signup-bonus: 10
