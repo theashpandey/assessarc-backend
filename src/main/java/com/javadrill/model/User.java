@@ -5,8 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 /**
  * Firestore collection: "users"
  * Document ID: Firebase UID
@@ -33,10 +31,6 @@ public class User {
     // Interview targeting preferences
     private String interviewRole;
     private String experienceLevel;
-
-    // Track which question bank IDs this user has seen across all sessions
-    // so we avoid repeating questions even across multiple interviews
-    private List<String> seenQuestionIds;
 
     // Stats
     private int totalInterviews;

@@ -4,10 +4,8 @@ import com.javadrill.config.AppProperties;
 import com.javadrill.dto.Dto;
 import com.javadrill.dto.Dto.QADetailDto;
 import com.javadrill.model.Interview;
-import com.javadrill.model.QuestionBank;
 import com.javadrill.model.User;
 import com.javadrill.repository.InterviewRepository;
-import com.javadrill.repository.QuestionBankRepository;
 import com.javadrill.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,18 +22,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class InterviewService {
 
-    private static final List<String> CATEGORIES = List.of(
-            "java_core", "oops", "multithreading", "spring",
-            "system_design", "problem_solving", "behavioral"
-    );
     private static final int TARGET_QUESTION_COUNT = 10;
     private static final int TOP_UP_QUESTION_COUNT = 4;
-    private static final int MIN_COMMON_BANK_SIZE = 24;
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a").withZone(ZoneId.of("Asia/Kolkata"));
 
     private final InterviewRepository interviewRepository;
-    private final QuestionBankRepository questionBankRepository;
     private final UserRepository userRepository;
     private final GeminiService geminiService;
     private final AppProperties props;
@@ -96,7 +88,6 @@ public class InterviewService {
                         .question(q.getQuestion())
                         .category(q.getCategory())
                         .difficulty(q.getDifficulty())
-                        .fromBank(q.isFromBank())
                         .answer("")
                         .feedback("")
                         .build())
@@ -138,59 +129,30 @@ public class InterviewService {
     private List<Dto.QuestionDto> buildQuestions(String resumeSummary, List<String> existingQuestionTexts,
                                                  String interviewRole, String experienceLevel) {
         List<String> allowedCategories = geminiService.categoriesForRole(interviewRole);
-        if (false && "java_developer".equals(interviewRole)) {
-            ensureCommonQuestionBank();
-        }
-
-        long bankTotal = 0;
-        // How many to pick from bank vs generate fresh
-        int bankPickCount = 0;
-        int generateCount = Math.max(4, TARGET_QUESTION_COUNT - bankPickCount);
-
-        Set<String> sessionExcludeIds = new HashSet<>();
         List<Dto.QuestionDto> result = new ArrayList<>();
+        Set<String> seenQuestionTexts = existingQuestionTexts.stream()
+                .map(this::normalizeQuestionText)
+                .filter(text -> !text.isBlank())
+                .collect(Collectors.toCollection(HashSet::new));
 
-        // Pick from bank — spread across categories
-        List<String> shuffledCats = new ArrayList<>(allowedCategories);
-        Collections.shuffle(shuffledCats);
-
-        for (String cat : shuffledCats) {
-            if (result.size() >= bankPickCount) break;
-            List<QuestionBank> picked = questionBankRepository.pickRandom(cat, sessionExcludeIds, 3);
-            Optional<QuestionBank> commonPick = picked.stream()
-                    .filter(q -> !looksUserSpecific(q.getText()))
-                    .findFirst();
-            if (commonPick.isPresent()) {
-                QuestionBank q = commonPick.get();
-                sessionExcludeIds.add(q.getId());
-                result.add(Dto.QuestionDto.builder()
-                        .id(q.getId())
-                        .question(q.getText())
-                        .category(q.getCategory())
-                        .difficulty(q.getDifficulty())
-                        .fromBank(true)
-                        .build());
-            }
-        }
-
-        log.info("Picked {} from bank. Generating {} fresh questions.", result.size(), generateCount);
-
-        // Generate fresh questions — avoid already picked ones
+        log.info("Generating {} fresh questions.", TARGET_QUESTION_COUNT);
         List<Map<String, String>> newQs = geminiService.generateQuestions(
-                resumeSummary, existingQuestionTexts, generateCount, interviewRole, experienceLevel, allowedCategories);
+                resumeSummary, existingQuestionTexts, TARGET_QUESTION_COUNT,
+                interviewRole, experienceLevel, allowedCategories);
 
         for (var qMap : newQs) {
             String text = qMap.get("question");
             String cat  = qMap.get("category");
             String diff = qMap.getOrDefault("difficulty", "medium");
             if (text == null || text.isBlank() || cat == null || !allowedCategories.contains(cat)) continue;
+            String normalized = normalizeQuestionText(text);
+            if (normalized.isBlank() || !seenQuestionTexts.add(normalized)) continue;
 
             result.add(Dto.QuestionDto.builder()
                     .id("ai_" + UUID.randomUUID())
                     .question(text)
                     .category(cat)
                     .difficulty(diff)
-                    .fromBank(false)
                     .build());
         }
 
@@ -198,57 +160,11 @@ public class InterviewService {
             throw new RuntimeException("Could not generate questions. Please try again.");
         }
 
-        // Increment usage count for bank questions
-        result.stream()
-              .filter(Dto.QuestionDto::isFromBank)
-              .forEach(q -> questionBankRepository.incrementUsedCount(q.getId()));
-
-        // Shuffle so questions don't always come in same category order
         Collections.shuffle(result);
         log.info("Final question set: {} questions", result.size());
         return result;
     }
-
-    private void ensureCommonQuestionBank() {
-        long bankTotal = questionBankRepository.countAll();
-        if (bankTotal >= MIN_COMMON_BANK_SIZE) return;
-
-        List<String> existingTexts = questionBankRepository.findAll().stream()
-                .map(QuestionBank::getText)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-        int missing = (int) Math.min(12, MIN_COMMON_BANK_SIZE - bankTotal);
-        List<Map<String, String>> commonQs = geminiService.generateCommonQuestions(existingTexts, missing);
-
-        int added = 0;
-        for (var qMap : commonQs) {
-            String text = qMap.get("question");
-            String cat = qMap.get("category");
-            String diff = qMap.getOrDefault("difficulty", "medium");
-            if (text == null || text.isBlank() || cat == null || !CATEGORIES.contains(cat)) continue;
-            if (looksUserSpecific(text)) continue;
-            if (questionBankRepository.addIfNotDuplicate(text, cat, diff).isPresent()) {
-                added++;
-            }
-        }
-        if (added > 0) {
-            log.info("Seeded {} common questions into shared question bank", added);
-        }
-    }
-
-    private boolean looksUserSpecific(String text) {
-        String lower = text.toLowerCase(Locale.ROOT);
-        return lower.contains("your resume")
-                || lower.contains("your profile")
-                || lower.contains("your background")
-                || lower.contains("your current project")
-                || lower.contains("your recent project")
-                || lower.contains("you worked on")
-                || lower.contains("based on your")
-                || lower.contains("from your experience");
-    }
-
-    // ── Submit Answer ──
+    // -- Submit Answer --
     public Dto.NextQuestionResponse nextQuestion(String uid, Dto.NextQuestionRequest req) {
         Interview interview = interviewRepository.findById(req.getInterviewId())
                 .orElseThrow(() -> new RuntimeException("Interview not found"));
@@ -276,12 +192,16 @@ public class InterviewService {
             String cat = qMap.get("category");
             String diff = qMap.getOrDefault("difficulty", "medium");
             if (text == null || text.isBlank() || cat == null || !allowedCategories.contains(cat)) continue;
+            String normalized = normalizeQuestionText(text);
+            boolean duplicate = existingTexts.stream()
+                    .map(this::normalizeQuestionText)
+                    .anyMatch(normalized::equals);
+            if (normalized.isBlank() || duplicate) continue;
             next = Dto.QuestionDto.builder()
                     .id("ai_" + UUID.randomUUID())
                     .question(text)
                     .category(cat)
                     .difficulty(diff)
-                    .fromBank(false)
                     .build();
             break;
         }
@@ -292,7 +212,6 @@ public class InterviewService {
                 .question(next.getQuestion())
                 .category(next.getCategory())
                 .difficulty(next.getDifficulty())
-                .fromBank(false)
                 .answer("")
                 .feedback("")
                 .build();
@@ -315,6 +234,14 @@ public class InterviewService {
                 .distinct()
                 .limit(80)
                 .collect(Collectors.toList());
+    }
+
+    private String normalizeQuestionText(String question) {
+        if (question == null) return "";
+        return question.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9 ]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     public Dto.SubmitAnswerResponse submitAnswer(String uid, Dto.SubmitAnswerRequest req) {
@@ -436,20 +363,7 @@ public class InterviewService {
 
         long completedAt = System.currentTimeMillis();
 
-        // Track which bank question IDs were used
-        List<String> bankIds = qas.stream()
-                .filter(Interview.QuestionAnswer::isFromBank)
-                .map(Interview.QuestionAnswer::getQuestionId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-
-        interviewRepository.completeInterview(interviewId, scores, completedAt, bankIds);
-
-        // Update user's seen question IDs (so next session avoids them)
-        // Only track bank questions — AI-generated are already fresh
-        if (!bankIds.isEmpty()) {
-            userRepository.addSeenQuestionIds(uid, bankIds);
-        }
+        interviewRepository.completeInterview(interviewId, scores, completedAt);
 
         // Update user stats
         List<Interview> allCompleted = interviewRepository.findAllCompletedByUserId(uid);
@@ -654,3 +568,4 @@ public class InterviewService {
                 .build();
     }
 }
+

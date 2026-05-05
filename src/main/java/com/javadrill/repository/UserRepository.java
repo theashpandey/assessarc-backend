@@ -1,6 +1,5 @@
 package com.javadrill.repository;
 
-import com.google.cloud.firestore.FieldValue;
 import com.google.cloud.firestore.Firestore;
 import com.javadrill.model.User;
 import com.javadrill.model.WalletTransaction;
@@ -163,21 +162,6 @@ public class UserRepository {
                     .update("lastActiveAt", System.currentTimeMillis()).get();
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error updating last active for {}", uid);
-        }
-    }
-
-    /**
-     * Append question IDs to the user's seenQuestionIds list.
-     * Used to avoid repeating questions across multiple sessions.
-     */
-    public void addSeenQuestionIds(String uid, List<String> questionIds) {
-        if (questionIds == null || questionIds.isEmpty()) return;
-        try {
-            firestore.collection(COLLECTION).document(uid)
-                    .update("seenQuestionIds", FieldValue.arrayUnion(questionIds.toArray()))
-                    .get();
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("Error adding seen question IDs for {}: {}", uid, e.getMessage());
         }
     }
 

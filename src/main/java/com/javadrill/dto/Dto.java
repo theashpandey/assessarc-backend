@@ -148,7 +148,6 @@ public class Dto {
         private String question;
         private String category;
         private String difficulty;
-        private boolean fromBank;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor

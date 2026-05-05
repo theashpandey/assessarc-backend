@@ -32,9 +32,6 @@ public class Interview {
     private Scores scores;
     private Analysis analysis;
 
-    // Track per-user questions used so next session avoids repetition
-    private List<String> questionIdsUsed; // bank question IDs used in this session
-
     @Data
     @Builder
     @NoArgsConstructor
@@ -44,7 +41,6 @@ public class Interview {
         private String question;
         private String category;
         private String difficulty;
-        private boolean fromBank;
         private String answer;
         private String feedback;
         private long answerTimestamp;

@@ -202,16 +202,12 @@ public class InterviewRepository {
         }
     }
 
-    public void completeInterview(String interviewId, Interview.Scores scores,
-                                   long completedAt, List<String> questionIdsUsed) {
+    public void completeInterview(String interviewId, Interview.Scores scores, long completedAt) {
         try {
             Map<String, Object> updates = new HashMap<>();
             updates.put("status", "COMPLETED");
             updates.put("scores", scores);
             updates.put("completedAt", completedAt);
-            if (questionIdsUsed != null && !questionIdsUsed.isEmpty()) {
-                updates.put("questionIdsUsed", questionIdsUsed);
-            }
             firestore.collection(COLLECTION).document(interviewId).update(updates).get();
             log.info("Interview {} marked COMPLETED with score={}", interviewId,
                     scores != null ? scores.getOverall() : "?");

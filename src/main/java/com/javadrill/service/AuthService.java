@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.Locale;
 
 @Slf4j
@@ -38,7 +37,6 @@ public class AuthService {
                     .walletCredits(props.getWallet().getSignupBonus())
                     .createdAt(System.currentTimeMillis())
                     .lastActiveAt(System.currentTimeMillis())
-                    .seenQuestionIds(new ArrayList<>())
                     .totalInterviews(0)
                     .avgScore(0.0)
                     .bestScore(0)
