@@ -56,7 +56,7 @@ public class GlobalExceptionHandler {
                 || lower.contains("duration") || lower.contains("too large")
                 || lower.contains("required") || lower.contains("mismatch")
                 || lower.contains("already processed") || lower.contains("already been used")
-                || lower.contains("must be between")) {
+                || lower.contains("must be between") || lower.contains("unsupported")) {
             return HttpStatus.BAD_REQUEST;
         }
         return HttpStatus.INTERNAL_SERVER_ERROR;

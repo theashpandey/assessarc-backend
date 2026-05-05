@@ -93,10 +93,22 @@ public class GeminiService {
         return ROLE_CATEGORIES.containsKey(normalized) ? normalized : "java_developer";
     }
 
+    public boolean isSupportedRole(String role) {
+        if (role == null || role.isBlank()) return false;
+        String normalized = role.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+        return ROLE_CATEGORIES.containsKey(normalized);
+    }
+
     public String normalizeExperience(String experience) {
         if (experience == null || experience.isBlank()) return "3_5";
         String normalized = experience.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
         return EXPERIENCE_LABELS.containsKey(normalized) ? normalized : "3_5";
+    }
+
+    public boolean isSupportedExperience(String experience) {
+        if (experience == null || experience.isBlank()) return false;
+        String normalized = experience.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+        return EXPERIENCE_LABELS.containsKey(normalized);
     }
 
     public String roleLabel(String role) {

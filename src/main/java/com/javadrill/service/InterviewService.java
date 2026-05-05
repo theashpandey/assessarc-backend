@@ -41,6 +41,20 @@ public class InterviewService {
                 ? req.getInterviewRole() : user.getInterviewRole();
         String requestedExperience = req.getExperienceLevel() != null && !req.getExperienceLevel().isBlank()
                 ? req.getExperienceLevel() : user.getExperienceLevel();
+
+        if (requestedRole == null || requestedRole.isBlank()) {
+            throw new RuntimeException("Interview role is required. Please save your role before starting.");
+        }
+        if (requestedExperience == null || requestedExperience.isBlank()) {
+            throw new RuntimeException("Experience level is required. Please save your experience level before starting.");
+        }
+        if (!geminiService.isSupportedRole(requestedRole)) {
+            throw new RuntimeException("Unsupported interview role. Please save a valid role before starting.");
+        }
+        if (!geminiService.isSupportedExperience(requestedExperience)) {
+            throw new RuntimeException("Unsupported experience level. Please save a valid experience level before starting.");
+        }
+
         String interviewRole = geminiService.normalizeRole(requestedRole);
         String experienceLevel = geminiService.normalizeExperience(requestedExperience);
 

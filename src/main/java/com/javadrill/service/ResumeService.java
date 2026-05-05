@@ -90,8 +90,21 @@ public class ResumeService {
 
     public Dto.InterviewPreferenceResponse saveInterviewPreferences(
             String uid, Dto.InterviewPreferenceRequest req) {
-        String role = geminiService.normalizeRole(req != null ? req.getInterviewRole() : null);
-        String experience = geminiService.normalizeExperience(req != null ? req.getExperienceLevel() : null);
+        if (req == null || req.getInterviewRole() == null || req.getInterviewRole().isBlank()) {
+            throw new RuntimeException("Interview role is required");
+        }
+        if (req.getExperienceLevel() == null || req.getExperienceLevel().isBlank()) {
+            throw new RuntimeException("Experience level is required");
+        }
+        if (!geminiService.isSupportedRole(req.getInterviewRole())) {
+            throw new RuntimeException("Unsupported interview role");
+        }
+        if (!geminiService.isSupportedExperience(req.getExperienceLevel())) {
+            throw new RuntimeException("Unsupported experience level");
+        }
+
+        String role = geminiService.normalizeRole(req.getInterviewRole());
+        String experience = geminiService.normalizeExperience(req.getExperienceLevel());
         userRepository.updateInterviewPreferences(uid, role, experience);
         return Dto.InterviewPreferenceResponse.builder()
                 .success(true)
