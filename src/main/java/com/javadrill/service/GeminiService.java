@@ -20,6 +20,7 @@ public class GeminiService {
     private final AppProperties props;
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
+ 
 
     private static final List<String> CATEGORIES = List.of(
             "java_core", "oops", "multithreading", "spring",
@@ -34,7 +35,24 @@ public class GeminiService {
             "problem_solving", "Problem Solving",
             "behavioral", "Behavioral"
     );
-
+    
+    public  Map<String, Boolean> apis = Map.of(
+        "AIzaSyA5ZSxoQwpOY1L0s9tPK7gRxJBRZbLdqv0", true,
+        "AIzaSyCRs3WXzdC_b-PKpQBAcY2nagvZ9y-1tkU", true,
+        "AIzaSyDomS7-4cwoKy3B8DX5BsofQ-w0Kybsp7A", true,
+        "AIzaSyAkAY89mhhck93wQVV27bfV_-XT8PPyGU4", true
+);
+    public String getActiveKey(Map<String, Boolean> apiKeys) {
+      for (Map.Entry<String, Boolean> entry : apiKeys.entrySet()) {
+          if (entry.getValue()) {
+              return entry.getKey();
+          }
+      }
+      throw new RuntimeException("No active API keys available");
+  }
+    public void markKeyInactive(Map<String, Boolean> apiKeys, String key) {
+      apiKeys.put(key, false);
+  }
     private static final List<String> COMMON_CATEGORIES = List.of("problem_solving", "behavioral");
     private static final Map<String, String> ROLE_LABELS = Map.ofEntries(
             Map.entry("java_developer", "Java Developer"),
@@ -157,8 +175,11 @@ public class GeminiService {
     }
 
     public String callGeminiWithTemp(String userPrompt, String systemPrompt, double temperature) {
-        try {
-            String apiKey = props.getGemini().getApiKey();
+       
+      String apiKey = null;
+      try {
+         //   String apiKey = props.getGemini().getApiKey();
+           apiKey = getActiveKey(apis);
             if (apiKey == null || apiKey.isBlank()) {
                 throw new GeminiUnavailableException("AI service is not configured");
             }
@@ -184,7 +205,7 @@ public class GeminiService {
                             "topK", 40
                     )
             );
-
+            
             String url = props.getGemini().getUrl() + "?key=" + apiKey;
 
             String responseStr = webClientBuilder.build()
@@ -240,6 +261,7 @@ public class GeminiService {
             throw e;
         } catch (Exception e) {
             log.error("Gemini API call failed: {}", sanitizeSecret(e.getMessage()));
+            markKeyInactive(apis, apiKey);
             throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
         }
     }
@@ -309,7 +331,7 @@ public class GeminiService {
         }
     }
 
-    public List<Map<String, String>> generateCommonQuestions(List<String> existingTexts, int count) {
+    public List<Map<String, String>> generayyteCommonQuestions1(List<String> existingTexts, int count) {
         String existing = existingTexts.isEmpty() ? "none" : String.join("\n- ", existingTexts);
         String prompt = String.format(
                 "Already available common Java interview questions (DO NOT ask similar ones):\n- %s\n\n" +
