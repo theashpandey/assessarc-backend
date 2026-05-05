@@ -29,6 +29,7 @@ public class InterviewService {
             "system_design", "problem_solving", "behavioral"
     );
     private static final int TARGET_QUESTION_COUNT = 10;
+    private static final int TOP_UP_QUESTION_COUNT = 4;
     private static final int MIN_COMMON_BANK_SIZE = 24;
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a").withZone(ZoneId.of("Asia/Kolkata"));
@@ -40,9 +41,16 @@ public class InterviewService {
     private final AppProperties props;
 
     // ── Start Interview ──
-    public Dto.StartInterviewResponse startInterview(String uid, int durationMinutes) {
+    public Dto.StartInterviewResponse startInterview(String uid, Dto.StartInterviewRequest req) {
         User user = userRepository.findById(uid)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+        int durationMinutes = req.getDurationMinutes();
+        String requestedRole = req.getInterviewRole() != null && !req.getInterviewRole().isBlank()
+                ? req.getInterviewRole() : user.getInterviewRole();
+        String requestedExperience = req.getExperienceLevel() != null && !req.getExperienceLevel().isBlank()
+                ? req.getExperienceLevel() : user.getExperienceLevel();
+        String interviewRole = geminiService.normalizeRole(requestedRole);
+        String experienceLevel = geminiService.normalizeExperience(requestedExperience);
 
         // Validate duration
         if (durationMinutes != 30 && durationMinutes != 60) {
@@ -73,11 +81,10 @@ public class InterviewService {
         }
 
         // Build question list with smart dedup
-        List<String> userSeenIds = user.getSeenQuestionIds() != null
-                ? user.getSeenQuestionIds() : List.of();
-        log.info("Building question set. User has seen {} bank questions.", userSeenIds.size());
+        List<String> historicalQuestions = collectHistoricalQuestionTexts(uid, null);
+        log.info("Building question set. User has {} historical questions.", historicalQuestions.size());
 
-        List<Dto.QuestionDto> questions = buildQuestions(resumeSummary, userSeenIds);
+        List<Dto.QuestionDto> questions = buildQuestions(resumeSummary, historicalQuestions, interviewRole, experienceLevel);
         if (questions.size() < 2) {
             throw new RuntimeException("Could not generate enough questions. Please try again.");
         }
@@ -99,6 +106,8 @@ public class InterviewService {
                 .userId(uid)
                 .status("STARTED")
                 .durationMinutes(durationMinutes)
+                .interviewRole(interviewRole)
+                .experienceLevel(experienceLevel)
                 .creditsDeducted(price)
                 .startedAt(System.currentTimeMillis())
                 .resumeSummary(resumeSummary)
@@ -111,6 +120,8 @@ public class InterviewService {
         return Dto.StartInterviewResponse.builder()
                 .interviewId(interview.getId())
                 .resumeSummary(resumeSummary)
+                .interviewRole(interviewRole)
+                .experienceLevel(experienceLevel)
                 .questions(questions)
                 .creditsDeducted(price)
                 .walletBalance(newBalance)
@@ -124,19 +135,23 @@ public class InterviewService {
      * - Shuffle so order is not predictable
      * - No duplicate questions within a session
      */
-    private List<Dto.QuestionDto> buildQuestions(String resumeSummary, List<String> userSeenIds) {
-        ensureCommonQuestionBank();
+    private List<Dto.QuestionDto> buildQuestions(String resumeSummary, List<String> existingQuestionTexts,
+                                                 String interviewRole, String experienceLevel) {
+        List<String> allowedCategories = geminiService.categoriesForRole(interviewRole);
+        if (false && "java_developer".equals(interviewRole)) {
+            ensureCommonQuestionBank();
+        }
 
-        long bankTotal = questionBankRepository.countAll();
+        long bankTotal = 0;
         // How many to pick from bank vs generate fresh
-        int bankPickCount = bankTotal >= MIN_COMMON_BANK_SIZE ? 6 : bankTotal > 10 ? 4 : bankTotal > 4 ? 2 : 0;
+        int bankPickCount = 0;
         int generateCount = Math.max(4, TARGET_QUESTION_COUNT - bankPickCount);
 
-        Set<String> sessionExcludeIds = new HashSet<>(userSeenIds);
+        Set<String> sessionExcludeIds = new HashSet<>();
         List<Dto.QuestionDto> result = new ArrayList<>();
 
         // Pick from bank — spread across categories
-        List<String> shuffledCats = new ArrayList<>(CATEGORIES);
+        List<String> shuffledCats = new ArrayList<>(allowedCategories);
         Collections.shuffle(shuffledCats);
 
         for (String cat : shuffledCats) {
@@ -161,18 +176,14 @@ public class InterviewService {
         log.info("Picked {} from bank. Generating {} fresh questions.", result.size(), generateCount);
 
         // Generate fresh questions — avoid already picked ones
-        List<String> existingTexts = result.stream()
-                .map(Dto.QuestionDto::getQuestion)
-                .collect(Collectors.toList());
-
         List<Map<String, String>> newQs = geminiService.generateQuestions(
-                resumeSummary, existingTexts, generateCount);
+                resumeSummary, existingQuestionTexts, generateCount, interviewRole, experienceLevel, allowedCategories);
 
         for (var qMap : newQs) {
             String text = qMap.get("question");
             String cat  = qMap.get("category");
             String diff = qMap.getOrDefault("difficulty", "medium");
-            if (text == null || text.isBlank() || cat == null || !CATEGORIES.contains(cat)) continue;
+            if (text == null || text.isBlank() || cat == null || !allowedCategories.contains(cat)) continue;
 
             result.add(Dto.QuestionDto.builder()
                     .id("ai_" + UUID.randomUUID())
@@ -238,6 +249,74 @@ public class InterviewService {
     }
 
     // ── Submit Answer ──
+    public Dto.NextQuestionResponse nextQuestion(String uid, Dto.NextQuestionRequest req) {
+        Interview interview = interviewRepository.findById(req.getInterviewId())
+                .orElseThrow(() -> new RuntimeException("Interview not found"));
+        if (!interview.getUserId().equals(uid)) throw new RuntimeException("Unauthorized");
+        if (!"STARTED".equals(interview.getStatus())) {
+            throw new RuntimeException("Interview is not in progress");
+        }
+
+        List<Interview.QuestionAnswer> existing = interview.getQuestions() != null
+                ? interview.getQuestions() : List.of();
+        List<String> existingTexts = new ArrayList<>(collectHistoricalQuestionTexts(uid, interview.getId()));
+        existing.stream()
+                .map(Interview.QuestionAnswer::getQuestion)
+                .filter(Objects::nonNull)
+                .forEach(existingTexts::add);
+
+        List<String> allowedCategories = geminiService.categoriesForRole(interview.getInterviewRole());
+        List<Map<String, String>> generated = geminiService.generateQuestions(
+                interview.getResumeSummary(), existingTexts, TOP_UP_QUESTION_COUNT,
+                interview.getInterviewRole(), interview.getExperienceLevel(), allowedCategories);
+
+        Dto.QuestionDto next = null;
+        for (Map<String, String> qMap : generated) {
+            String text = qMap.get("question");
+            String cat = qMap.get("category");
+            String diff = qMap.getOrDefault("difficulty", "medium");
+            if (text == null || text.isBlank() || cat == null || !allowedCategories.contains(cat)) continue;
+            next = Dto.QuestionDto.builder()
+                    .id("ai_" + UUID.randomUUID())
+                    .question(text)
+                    .category(cat)
+                    .difficulty(diff)
+                    .fromBank(false)
+                    .build();
+            break;
+        }
+        if (next == null) throw new RuntimeException("Could not generate the next question. Please try again.");
+
+        Interview.QuestionAnswer qa = Interview.QuestionAnswer.builder()
+                .questionId(next.getId())
+                .question(next.getQuestion())
+                .category(next.getCategory())
+                .difficulty(next.getDifficulty())
+                .fromBank(false)
+                .answer("")
+                .feedback("")
+                .build();
+        interviewRepository.appendQuestion(interview.getId(), qa);
+
+        return Dto.NextQuestionResponse.builder()
+                .question(next)
+                .questionIndex(existing.size())
+                .build();
+    }
+
+    private List<String> collectHistoricalQuestionTexts(String uid, String excludeInterviewId) {
+        return interviewRepository.findAllCompletedByUserId(uid).stream()
+                .filter(i -> excludeInterviewId == null || !excludeInterviewId.equals(i.getId()))
+                .filter(i -> i.getQuestions() != null)
+                .flatMap(i -> i.getQuestions().stream())
+                .map(Interview.QuestionAnswer::getQuestion)
+                .filter(Objects::nonNull)
+                .filter(q -> !q.isBlank())
+                .distinct()
+                .limit(80)
+                .collect(Collectors.toList());
+    }
+
     public Dto.SubmitAnswerResponse submitAnswer(String uid, Dto.SubmitAnswerRequest req) {
         Interview interview = interviewRepository.findById(req.getInterviewId())
                 .orElseThrow(() -> new RuntimeException("Interview not found"));
@@ -286,7 +365,8 @@ public class InterviewService {
         try {
             feedback = geminiService.generateFeedback(
                     currentQ.getQuestion(), currentQ.getCategory(),
-                    answer, prevQuestion, prevAnswer);
+                    answer, prevQuestion, prevAnswer,
+                    interview.getInterviewRole(), interview.getExperienceLevel());
         } catch (GeminiService.GeminiQuotaException e) {
             feedback = "Thanks, I got your answer. The AI feedback service is temporarily busy, so I'll save this response and keep the interview moving. Try to keep your next answer direct, structured, and supported with one concrete example.";
         }
@@ -323,7 +403,7 @@ public class InterviewService {
                 .map(q -> {
                     Map<String, String> m = new LinkedHashMap<>();
                     m.put("question", q.getQuestion());
-                    m.put("category", q.getCategory() != null ? q.getCategory() : "java_core");
+                    m.put("category", q.getCategory() != null ? q.getCategory() : "problem_solving");
                     m.put("answer", q.getAnswer() != null && !q.getAnswer().isBlank()
                             ? q.getAnswer() : "(no answer)");
                     return m;
@@ -331,7 +411,9 @@ public class InterviewService {
                 .collect(Collectors.toList());
 
         // Calculate scores
-        Map<String, Object> rawScores = geminiService.calculateScores(qaList);
+        List<String> allowedCategories = geminiService.categoriesForRole(interview.getInterviewRole());
+        Map<String, Object> rawScores = geminiService.calculateScores(
+                qaList, interview.getInterviewRole(), interview.getExperienceLevel(), allowedCategories);
 
         @SuppressWarnings("unchecked")
         Map<String, Integer> categories = convertCategoryScores(
@@ -393,6 +475,8 @@ public class InterviewService {
             return Dto.InterviewHistoryItem.builder()
                     .id(i.getId())
                     .date(DATE_FMT.format(Instant.ofEpochMilli(ts)))
+                    .interviewRole(i.getInterviewRole())
+                    .experienceLevel(i.getExperienceLevel())
                     .durationMinutes(i.getDurationMinutes())
                     .scores(toScoresDto(i.getScores()))
                     .questionCount(i.getQuestions() != null ? i.getQuestions().size() : 0)
@@ -422,6 +506,8 @@ public class InterviewService {
         return Dto.InterviewDetailResponse.builder()
                 .id(interview.getId())
                 .date(DATE_FMT.format(Instant.ofEpochMilli(ts)))
+                .interviewRole(interview.getInterviewRole())
+                .experienceLevel(interview.getExperienceLevel())
                 .durationMinutes(interview.getDurationMinutes())
                 .scores(toScoresDto(interview.getScores()))
                 .questions(qaList)
@@ -444,13 +530,14 @@ public class InterviewService {
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("Analyze this single Java mock interview session.\n");
+        sb.append("Analyze this single mock interview session.\n");
+        sb.append("Target role: ").append(geminiService.roleLabel(interview.getInterviewRole())).append("\n");
+        sb.append("Experience level: ").append(geminiService.experienceLabel(interview.getExperienceLevel())).append("\n");
         if (interview.getScores() != null) {
             sb.append("Scores: overall=").append(interview.getScores().getOverall())
                     .append(", technical=").append(interview.getScores().getTechnical())
                     .append(", communication=").append(interview.getScores().getCommunication())
                     .append(", problemSolving=").append(interview.getScores().getProblemSolving())
-                    .append(", javaDepth=").append(interview.getScores().getJavaDepth())
                     .append("\n\n");
         }
         for (Interview.QuestionAnswer q : qas) {
@@ -480,7 +567,7 @@ public class InterviewService {
         try {
             Map<String, Object> raw = geminiService.safeParseJsonObject(geminiService.callGeminiWithTemp(
                     prompt,
-                    "You are Sarah, a senior Java interviewer. Analyze only this one session. Be specific, fair, and actionable. Return only JSON.",
+                    "You are Sarah, a senior interviewer for the requested role. Analyze only this one session. Be specific, fair, and actionable. Return only JSON.",
                     0.35));
             int score = interview.getScores() != null ? interview.getScores().getOverall() : 0;
             Interview.Analysis analysis = Interview.Analysis.builder()

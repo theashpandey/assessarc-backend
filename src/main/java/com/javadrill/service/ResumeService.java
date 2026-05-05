@@ -17,6 +17,7 @@ import java.io.IOException;
 public class ResumeService {
 
     private final UserRepository userRepository;
+    private final GeminiService geminiService;
     private static final int MAX_RESUME_CHARS = 12_000;
 
     public Dto.ResumeUploadResponse uploadResume(String uid, MultipartFile file) {
@@ -84,6 +85,19 @@ public class ResumeService {
                 .charCount(text.length())
                 .fileName(fileName)
                 .message("Resume uploaded successfully! Your profile is ready for interviews.")
+                .build();
+    }
+
+    public Dto.InterviewPreferenceResponse saveInterviewPreferences(
+            String uid, Dto.InterviewPreferenceRequest req) {
+        String role = geminiService.normalizeRole(req != null ? req.getInterviewRole() : null);
+        String experience = geminiService.normalizeExperience(req != null ? req.getExperienceLevel() : null);
+        userRepository.updateInterviewPreferences(uid, role, experience);
+        return Dto.InterviewPreferenceResponse.builder()
+                .success(true)
+                .interviewRole(role)
+                .experienceLevel(experience)
+                .message("Interview role and experience saved.")
                 .build();
     }
 

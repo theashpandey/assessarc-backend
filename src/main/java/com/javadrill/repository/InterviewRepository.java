@@ -179,6 +179,29 @@ public class InterviewRepository {
         }
     }
 
+    public void appendQuestion(String interviewId, Interview.QuestionAnswer question) {
+        try {
+            var docRef = firestore.collection(COLLECTION).document(interviewId);
+            firestore.runTransaction(tx -> {
+                var snap = tx.get(docRef).get();
+                if (!snap.exists()) throw new RuntimeException("Interview not found: " + interviewId);
+
+                Interview iv = snap.toObject(Interview.class);
+                if (iv == null) throw new RuntimeException("Interview not found: " + interviewId);
+                List<Interview.QuestionAnswer> questions = iv.getQuestions() != null
+                        ? new ArrayList<>(iv.getQuestions()) : new ArrayList<>();
+                questions.add(question);
+                iv.setQuestions(questions);
+
+                tx.set(docRef, iv);
+                return null;
+            }).get();
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Error appending question for interview {}: {}", interviewId, e.getMessage());
+            throw new RuntimeException("Failed to add next question", e);
+        }
+    }
+
     public void completeInterview(String interviewId, Interview.Scores scores,
                                    long completedAt, List<String> questionIdsUsed) {
         try {

@@ -30,6 +30,10 @@ public class User {
     private long resumeUploadedAt;
     private String resumeSummary; // cached AI summary
 
+    // Interview targeting preferences
+    private String interviewRole;
+    private String experienceLevel;
+
     // Track which question bank IDs this user has seen across all sessions
     // so we avoid repeating questions even across multiple interviews
     private List<String> seenQuestionIds;

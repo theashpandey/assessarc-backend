@@ -77,6 +77,8 @@ public class PerformanceAnalysisService {
             Interview iv = last7.get(s);
             sb.append("=== SESSION ").append(s + 1)
               .append(" (").append(iv.getDurationMinutes()).append(" min) ===\n");
+            sb.append("Role: ").append(geminiService.roleLabel(iv.getInterviewRole())).append("\n");
+            sb.append("Experience: ").append(geminiService.experienceLabel(iv.getExperienceLevel())).append("\n");
 
             if (iv.getScores() != null) {
                 sb.append("Scores — Overall: ").append(iv.getScores().getOverall())
@@ -103,7 +105,7 @@ public class PerformanceAnalysisService {
             sb.append("\n");
         }
 
-        String systemPrompt = "You are a senior Java technical interviewer with 15 years at FAANG companies. " +
+        String systemPrompt = "You are a senior interviewer with 15 years across engineering, data, product, management, architecture, and HR hiring loops. " +
                 "You have just reviewed this candidate's complete interview history. " +
                 "Give a brutally honest, specific, actionable analysis — like you're writing an internal hiring assessment. " +
                 "DO NOT be generic. Reference specific patterns from their actual answers. " +
@@ -117,7 +119,7 @@ public class PerformanceAnalysisService {
                   "communicationAnalysis": "2-3 sentences. Are they clear? Do they structure answers well (STAR method)? Fluent or hesitant? Give specific examples from answers.",
                   "answeringFlowAnalysis": "2-3 sentences. Do they answer directly or ramble? Do they miss key points? Strong technically but weak at explaining? Patterns noticed?",
                   "strengthsSummary": "What they're genuinely good at. Mention specific categories and what evidence shows this.",
-                  "improvementPlan": "3 specific, actionable things to improve. Not 'study more Java' — be specific like 'Practice explaining thread lifecycle with diagrams' or 'Use STAR method for behavioral questions'.",
+                  "improvementPlan": "3 specific, actionable things to improve for the candidate's practiced role. Be concrete, for example a specific concept, tool, framework, hiring skill, leadership behavior, or answer structure.",
                   "interviewerVerdict": "If you were the hiring manager, what's your verdict? Strong hire / Hire with coaching / Not yet / Reject? Give reasoning.",
                   "categoryInsights": [
                     {"category": "java_core", "avgScore": 75, "insight": "Shows X pattern in answers...", "advice": "Should focus on Y specifically..."},
@@ -187,9 +189,9 @@ public class PerformanceAnalysisService {
                 .communicationAnalysis("Analysis temporarily unavailable. Please try again.")
                 .answeringFlowAnalysis("Keep practicing to get detailed flow analysis.")
                 .strengthsSummary("Complete more interviews to identify specific strengths.")
-                .improvementPlan("1. Practice explaining Java Core concepts clearly.\n"
+                .improvementPlan("1. Practice explaining role-specific fundamentals clearly.\n"
                         + "2. Use the STAR method for behavioral questions.\n"
-                        + "3. Practice system design with real examples.")
+                        + "3. Practice role-relevant design, process, or tradeoff questions with real examples.")
                 .interviewerVerdict("Insufficient data for a complete verdict. Keep interviewing!")
                 .categoryInsights(List.of())
                 .sessionCount(count)

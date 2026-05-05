@@ -34,6 +34,96 @@ public class GeminiService {
             "behavioral", "Behavioral"
     );
 
+    private static final List<String> COMMON_CATEGORIES = List.of("problem_solving", "behavioral");
+    private static final Map<String, String> ROLE_LABELS = Map.ofEntries(
+            Map.entry("java_developer", "Java Developer"),
+            Map.entry("python_developer", "Python Developer"),
+            Map.entry("react_developer", "React Developer"),
+            Map.entry("full_stack_developer", "Full Stack Developer"),
+            Map.entry("backend_engineer", "Backend Engineer"),
+            Map.entry("frontend_engineer", "Frontend Engineer"),
+            Map.entry("data_scientist", "Data Scientist"),
+            Map.entry("data_engineer", "Data Engineer"),
+            Map.entry("devops_engineer", "DevOps Engineer"),
+            Map.entry("cloud_engineer", "Cloud Engineer"),
+            Map.entry("qa_automation_engineer", "QA Automation Engineer"),
+            Map.entry("mobile_developer", "Mobile Developer"),
+            Map.entry("software_architect", "Software Architect"),
+            Map.entry("engineering_manager", "Engineering Manager"),
+            Map.entry("product_manager", "Product Manager"),
+            Map.entry("hr_recruiter", "HR / Recruiter")
+    );
+    private static final Map<String, String> EXPERIENCE_LABELS = Map.ofEntries(
+            Map.entry("fresher", "Fresher"),
+            Map.entry("1_3", "1-3 years"),
+            Map.entry("3_5", "3-5 years"),
+            Map.entry("5_7", "5-7 years"),
+            Map.entry("7_10", "7-10 years"),
+            Map.entry("10_12", "10-12 years"),
+            Map.entry("12_15", "12-15 years"),
+            Map.entry("15_20", "15-20 years"),
+            Map.entry("20_25", "20-25 years"),
+            Map.entry("25_30", "25-30 years"),
+            Map.entry("30_35", "30-35 years"),
+            Map.entry("35_plus", "35+ years")
+    );
+    private static final Map<String, List<String>> ROLE_CATEGORIES = Map.ofEntries(
+            Map.entry("java_developer", List.of("java_core", "oops", "multithreading", "spring", "microservices", "system_design")),
+            Map.entry("python_developer", List.of("python_core", "oops", "django_fastapi", "api_design", "databases", "testing")),
+            Map.entry("react_developer", List.of("javascript", "react", "frontend_architecture", "testing", "api_design", "performance")),
+            Map.entry("full_stack_developer", List.of("javascript", "react", "api_design", "databases", "system_design", "cloud_devops")),
+            Map.entry("backend_engineer", List.of("api_design", "databases", "microservices", "system_design", "testing", "cloud_devops")),
+            Map.entry("frontend_engineer", List.of("javascript", "react", "frontend_architecture", "testing", "performance", "accessibility")),
+            Map.entry("data_scientist", List.of("python_core", "statistics", "machine_learning", "sql", "data_modeling", "experimentation")),
+            Map.entry("data_engineer", List.of("python_core", "sql", "data_modeling", "distributed_systems", "cloud_devops", "data_quality")),
+            Map.entry("devops_engineer", List.of("linux", "ci_cd", "cloud_devops", "kubernetes", "observability", "security")),
+            Map.entry("cloud_engineer", List.of("cloud_devops", "system_design", "networking", "security", "kubernetes", "cost_optimization")),
+            Map.entry("qa_automation_engineer", List.of("testing", "automation_frameworks", "api_testing", "ci_cd", "debugging", "quality_strategy")),
+            Map.entry("mobile_developer", List.of("mobile_architecture", "ui_state", "api_design", "testing", "performance", "release_management")),
+            Map.entry("software_architect", List.of("architecture", "system_design", "microservices", "cloud_devops", "security", "leadership")),
+            Map.entry("engineering_manager", List.of("people_management", "leadership", "delivery", "hiring", "stakeholder_management", "technical_judgment")),
+            Map.entry("product_manager", List.of("product_strategy", "prioritization", "stakeholder_management", "metrics", "execution", "user_research")),
+            Map.entry("hr_recruiter", List.of("hiring", "sourcing", "employee_relations", "communication", "process_management", "stakeholder_management"))
+    );
+
+    public String normalizeRole(String role) {
+        if (role == null || role.isBlank()) return "java_developer";
+        String normalized = role.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+        return ROLE_CATEGORIES.containsKey(normalized) ? normalized : "java_developer";
+    }
+
+    public String normalizeExperience(String experience) {
+        if (experience == null || experience.isBlank()) return "3_5";
+        String normalized = experience.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+        return EXPERIENCE_LABELS.containsKey(normalized) ? normalized : "3_5";
+    }
+
+    public String roleLabel(String role) {
+        return ROLE_LABELS.getOrDefault(normalizeRole(role), "Java Developer");
+    }
+
+    public String experienceLabel(String experience) {
+        return EXPERIENCE_LABELS.getOrDefault(normalizeExperience(experience), "3-5 years");
+    }
+
+    public List<String> categoriesForRole(String role) {
+        LinkedHashSet<String> categories = new LinkedHashSet<>(COMMON_CATEGORIES);
+        categories.addAll(ROLE_CATEGORIES.getOrDefault(normalizeRole(role), ROLE_CATEGORIES.get("java_developer")));
+        return new ArrayList<>(categories);
+    }
+
+    public String categoryLabel(String category) {
+        if (category == null || category.isBlank()) return "";
+        if (CAT_LABELS.containsKey(category)) return CAT_LABELS.get(category);
+        String[] parts = category.split("_");
+        List<String> words = new ArrayList<>();
+        for (String part : parts) {
+            if (part.isBlank()) continue;
+            words.add(part.substring(0, 1).toUpperCase(Locale.ROOT) + part.substring(1));
+        }
+        return String.join(" ", words);
+    }
+
     public static class GeminiQuotaException extends RuntimeException {
         public GeminiQuotaException(String message, Throwable cause) {
             super(message, cause);
@@ -130,8 +220,9 @@ public class GeminiService {
     public String parseResume(String resumeText) {
         String prompt = "Resume text:\n\n" + resumeText.substring(0, Math.min(4000, resumeText.length()))
                 + "\n\nExtract and summarize: candidate name, years of experience, "
-                + "Java skills and frameworks, projects, job titles, tech stack. "
-                + "Be concise, under 250 words. Focus on technical skills.";
+                + "primary role, technical and business skills, frameworks, tools, projects, "
+                + "leadership or HR responsibilities, job titles, and tech stack. "
+                + "Be concise, under 250 words. Focus on evidence useful for role-based interview questions.";
 
         try {
             return callGemini(prompt, "You are a resume parser. Extract technical profile concisely. No fluff.");
@@ -147,35 +238,44 @@ public class GeminiService {
      */
     public List<Map<String, String>> generateQuestions(String resumeSummary,
                                                         List<String> existingTexts,
-                                                        int count) {
+                                                        int count,
+                                                        String role,
+                                                        String experienceLevel,
+                                                        List<String> allowedCategories) {
         String existing = existingTexts.isEmpty() ? "none" :
                 String.join("\n- ", existingTexts);
+        String allowed = String.join(", ", allowedCategories);
+        String roleLabel = roleLabel(role);
+        String expLabel = experienceLabel(experienceLevel);
 
         String prompt = String.format(
-                "Java developer profile:\n%s\n\n" +
+                "Target interview role: %s\n" +
+                "Experience level: %s\n" +
+                "Candidate profile from resume:\n%s\n\n" +
                 "Already selected questions (DO NOT ask similar ones):\n- %s\n\n" +
-                "Generate exactly %d NEW, unique Java interview questions. " +
+                "Generate exactly %d NEW, unique interview questions for this role and experience level. " +
                 "Make them conversational, natural, NOT robotic. " +
+                "Questions must be resume-based: use the candidate's real projects, tools, responsibilities, and tech stack where possible. " +
                 "Vary categories across: %s\n" +
+                "Problem solving and behavioral are common for every role; other categories must match the chosen role and resume. " +
                 "Each question should sound like a real senior interviewer asking it.\n" +
-                "Mix difficulty: some easy warm-ups, mostly medium, a few hard.\n\n" +
+                "Tune depth to %s: fresher questions should test fundamentals; senior questions should test tradeoffs, ownership, architecture, leadership, and impact.\n\n" +
                 "Return ONLY valid JSON array:\n" +
                 "[{\"question\":\"...\",\"category\":\"java_core\",\"difficulty\":\"medium\"}, ...]\n" +
                 "category must be one of: %s\n" +
                 "difficulty: easy | medium | hard",
-                resumeSummary, existing, count,
-                String.join(", ", CATEGORIES),
-                String.join(", ", CATEGORIES)
+                roleLabel, expLabel, resumeSummary, existing, count,
+                allowed, expLabel, allowed
         );
 
         try {
             String raw = callGeminiWithTemp(prompt,
-                    "You are a senior Java technical interviewer at a top product company. " +
-                    "Generate natural, varied interview questions. Return only valid JSON array.", 0.9);
+                    "You are Sarah, a senior interviewer who can interview software engineers, data roles, managers, architects, product, and HR roles. " +
+                    "Generate natural, varied, role-specific interview questions. Return only valid JSON array.", 0.9);
             return safeParseJsonArray(raw);
         } catch (GeminiQuotaException e) {
             log.warn("Gemini quota exhausted while generating questions; using fallback questions");
-            return fallbackQuestions(count);
+            return fallbackQuestions(count, role, allowedCategories);
         }
     }
 
@@ -203,7 +303,7 @@ public class GeminiService {
             return safeParseJsonArray(raw);
         } catch (GeminiQuotaException e) {
             log.warn("Gemini quota exhausted while generating common questions; using fallback questions");
-            return fallbackQuestions(count);
+            return fallbackQuestions(count, "java_developer", CATEGORIES);
         }
     }
 
@@ -212,18 +312,20 @@ public class GeminiService {
      * Sounds like a human interviewer, not a bot.
      */
     public String generateFeedback(String question, String category,
-                                    String answer, String prevQuestion, String prevAnswer) {
+                                    String answer, String prevQuestion, String prevAnswer,
+                                    String role, String experienceLevel) {
         String prevCtx = "";
         if (prevQuestion != null && !prevQuestion.isBlank() && prevAnswer != null && !prevAnswer.isBlank()) {
             prevCtx = "Previous question: \"" + prevQuestion + "\"\n" +
                       "Candidate answered: \"" + prevAnswer.substring(0, Math.min(120, prevAnswer.length())) + "...\"\n\n";
         }
 
-        String catLabel = CAT_LABELS.getOrDefault(category, category);
         String answerSnippet = answer != null ? answer : "(no answer given)";
 
         String prompt = prevCtx +
-                "Current question [" + catLabel + "]: \"" + question + "\"\n\n" +
+                "Target role: " + roleLabel(role) + "\n" +
+                "Experience level: " + experienceLabel(experienceLevel) + "\n" +
+                "Current question [" + categoryLabel(category) + "]: \"" + question + "\"\n\n" +
                 "Candidate's answer: \"" + answerSnippet + "\"\n\n" +
                 "Give 2-3 sentence verbal feedback exactly as a human interviewer would say it live. " +
                 "Start naturally — like 'Good answer!', 'That's a solid start,', 'Interesting approach,' etc. " +
@@ -231,7 +333,7 @@ public class GeminiService {
                 "Sound warm but professional. No bullet points. No markdown. Conversational spoken style.";
 
         return callGemini(prompt,
-                "You are Sarah, a friendly but professional Java technical interviewer at Google. " +
+                "You are Sarah, a friendly but professional senior interviewer. " +
                 "Give short, natural spoken feedback — the kind you'd hear in a real interview room. " +
                 "Be specific, not generic. Sound human.");
     }
@@ -239,21 +341,29 @@ public class GeminiService {
     /**
      * Score completed interview — returns scores map
      */
-    public Map<String, Object> calculateScores(List<Map<String, String>> qaList) {
+    public Map<String, Object> calculateScores(List<Map<String, String>> qaList,
+                                               String role,
+                                               String experienceLevel,
+                                               List<String> allowedCategories) {
         var sb = new StringBuilder("Interview Q&As to evaluate:\n\n");
+        sb.append("Target role: ").append(roleLabel(role)).append("\n");
+        sb.append("Experience level: ").append(experienceLabel(experienceLevel)).append("\n");
+        sb.append("Allowed scoring categories: ").append(String.join(", ", allowedCategories)).append("\n\n");
         for (var qa : qaList) {
-            String catLabel = CAT_LABELS.getOrDefault(qa.get("category"), qa.get("category"));
+            String catLabel = categoryLabel(qa.get("category"));
             String answer = qa.getOrDefault("answer", "(no answer)");
             if (answer.isBlank()) answer = "(no answer given)";
             sb.append("[").append(catLabel).append("] Q: ").append(qa.get("question"))
               .append("\nA: ").append(answer).append("\n\n");
         }
         sb.append("Score each dimension out of 100 based on the actual answers. Be realistic and strict.\n")
+          .append("The categories object must include only these role-relevant keys: ")
+          .append(String.join(", ", allowedCategories)).append(".\n")
+          .append("technical means role-specific professional depth, not only coding.\n")
           .append("Return ONLY valid JSON (no markdown):\n")
           .append("{\"technical\":75,\"communication\":80,\"problemSolving\":70,")
           .append("\"javaDepth\":78,\"overall\":76,")
-          .append("\"categories\":{\"java_core\":72,\"oops\":80,\"multithreading\":65,")
-          .append("\"spring\":70,\"system_design\":68,\"problem_solving\":72,\"behavioral\":85}}");
+          .append("\"categories\":{\"problem_solving\":72,\"behavioral\":85}}");
 
         try {
             String raw = callGeminiWithTemp(sb.toString(),
@@ -262,7 +372,7 @@ public class GeminiService {
             return safeParseJsonObject(raw);
         } catch (GeminiQuotaException e) {
             log.warn("Gemini quota exhausted while scoring; using fallback scores");
-            return fallbackScores();
+            return fallbackScores(allowedCategories);
         }
     }
 
@@ -328,38 +438,37 @@ public class GeminiService {
         return value.length() <= max ? value : value.substring(0, max) + "...";
     }
 
-    private List<Map<String, String>> fallbackQuestions(int count) {
-        List<Map<String, String>> fallback = List.of(
-                Map.of("question", "Can you walk me through one Java project you worked on recently and explain your main responsibilities?", "category", "behavioral", "difficulty", "medium"),
-                Map.of("question", "How would you explain the difference between an interface and an abstract class in Java, and when would you choose each?", "category", "oops", "difficulty", "medium"),
-                Map.of("question", "What happens inside a Spring Boot application when it starts up?", "category", "spring", "difficulty", "medium"),
-                Map.of("question", "How do you handle exceptions in a REST API so clients get useful error responses?", "category", "spring", "difficulty", "medium"),
-                Map.of("question", "Can you explain how HashMap works internally in Java?", "category", "java_core", "difficulty", "medium"),
-                Map.of("question", "How would you make a piece of Java code thread-safe?", "category", "multithreading", "difficulty", "medium"),
-                Map.of("question", "Tell me about a time you had to debug a difficult production or testing issue.", "category", "behavioral", "difficulty", "medium"),
-                Map.of("question", "How would you design a simple service for handling user registrations and login?", "category", "system_design", "difficulty", "medium"),
-                Map.of("question", "What are the main differences between ArrayList and LinkedList?", "category", "java_core", "difficulty", "easy"),
-                Map.of("question", "How do you approach breaking down a problem before writing code?", "category", "problem_solving", "difficulty", "medium")
-        );
+    private List<Map<String, String>> fallbackQuestions(int count, String role, List<String> allowedCategories) {
+        List<String> categories = allowedCategories == null || allowedCategories.isEmpty()
+                ? categoriesForRole(role) : allowedCategories;
+        List<Map<String, String>> fallback = new ArrayList<>();
+        fallback.add(Map.of("question", "Can you walk me through one recent project or responsibility from your resume and explain your exact contribution?", "category", "behavioral", "difficulty", "medium"));
+        fallback.add(Map.of("question", "How do you break down an unfamiliar problem before deciding on an implementation or process?", "category", "problem_solving", "difficulty", "medium"));
+        for (String category : categories) {
+            if ("behavioral".equals(category) || "problem_solving".equals(category)) continue;
+            fallback.add(Map.of(
+                    "question", "For a " + roleLabel(role) + " interview, how would you demonstrate strong practical depth in " + categoryLabel(category) + " using an example from your resume?",
+                    "category", category,
+                    "difficulty", "medium"
+            ));
+        }
         return fallback.stream().limit(Math.max(1, Math.min(count, fallback.size()))).toList();
     }
 
-    private Map<String, Object> fallbackScores() {
+    private Map<String, Object> fallbackScores(List<String> allowedCategories) {
+        Map<String, Integer> categories = new LinkedHashMap<>();
+        List<String> cats = allowedCategories == null || allowedCategories.isEmpty()
+                ? List.of("problem_solving", "behavioral") : allowedCategories;
+        for (String category : cats) {
+            categories.put(category, 65);
+        }
         return Map.of(
                 "overall", 65,
                 "technical", 65,
                 "communication", 65,
                 "problemSolving", 65,
                 "javaDepth", 65,
-                "categories", Map.of(
-                        "java_core", 65,
-                        "oops", 65,
-                        "multithreading", 65,
-                        "spring", 65,
-                        "system_design", 65,
-                        "problem_solving", 65,
-                        "behavioral", 65
-                )
+                "categories", categories
         );
     }
 }

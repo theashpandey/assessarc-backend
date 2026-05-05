@@ -61,4 +61,13 @@ public class WalletAndResumeController {
         return ResponseEntity.ok(resumeService.uploadResume(
                 (String) auth.getPrincipal(), file));
     }
+
+    /** POST /api/profile/interview-preferences — Save role and experience targeting */
+    @PostMapping("/api/profile/interview-preferences")
+    public ResponseEntity<Dto.InterviewPreferenceResponse> saveInterviewPreferences(
+            Authentication auth,
+            @RequestBody Dto.InterviewPreferenceRequest req) {
+        return ResponseEntity.ok(resumeService.saveInterviewPreferences(
+                (String) auth.getPrincipal(), req));
+    }
 }

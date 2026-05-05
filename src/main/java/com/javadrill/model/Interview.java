@@ -21,6 +21,8 @@ public class Interview {
     private String userId;         // Firebase UID — consistent field name everywhere
     private String status;         // STARTED | COMPLETED | ABANDONED
     private int durationMinutes;   // 30 or 60
+    private String interviewRole;
+    private String experienceLevel;
     private int creditsDeducted;
     private long startedAt;
     private long completedAt;

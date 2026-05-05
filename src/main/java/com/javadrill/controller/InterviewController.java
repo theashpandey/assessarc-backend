@@ -24,7 +24,7 @@ public class InterviewController {
             @RequestBody Dto.StartInterviewRequest req) {
         String uid = (String) auth.getPrincipal();
         log.info("START interview uid={} duration={}min", uid, req.getDurationMinutes());
-        return ResponseEntity.ok(interviewService.startInterview(uid, req.getDurationMinutes()));
+        return ResponseEntity.ok(interviewService.startInterview(uid, req));
     }
 
     @PostMapping("/submit")
@@ -35,6 +35,15 @@ public class InterviewController {
         log.info("SUBMIT answer uid={} interviewId={} qIndex={}",
                 uid, req.getInterviewId(), req.getQuestionIndex());
         return ResponseEntity.ok(interviewService.submitAnswer(uid, req));
+    }
+
+    @PostMapping("/next-question")
+    public ResponseEntity<Dto.NextQuestionResponse> nextQuestion(
+            Authentication auth,
+            @RequestBody Dto.NextQuestionRequest req) {
+        String uid = (String) auth.getPrincipal();
+        log.info("NEXT question uid={} interviewId={}", uid, req.getInterviewId());
+        return ResponseEntity.ok(interviewService.nextQuestion(uid, req));
     }
 
     /**

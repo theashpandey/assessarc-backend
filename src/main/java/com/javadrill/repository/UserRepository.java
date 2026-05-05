@@ -145,6 +145,18 @@ public class UserRepository {
         }
     }
 
+    public void updateInterviewPreferences(String uid, String interviewRole, String experienceLevel) {
+        try {
+            Map<String, Object> updates = new HashMap<>();
+            updates.put("interviewRole", interviewRole);
+            updates.put("experienceLevel", experienceLevel);
+            firestore.collection(COLLECTION).document(uid).update(updates).get();
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Error updating interview preferences for {}: {}", uid, e.getMessage());
+            throw new RuntimeException("Failed to update interview preferences", e);
+        }
+    }
+
     public void updateLastActive(String uid) {
         try {
             firestore.collection(COLLECTION).document(uid)

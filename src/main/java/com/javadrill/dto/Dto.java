@@ -19,6 +19,8 @@ public class Dto {
         private String photoUrl;
         private int walletCredits;
         private boolean hasResume;
+        private String interviewRole;
+        private String experienceLevel;
         private boolean isNewUser;
         private int totalInterviews;
         private double avgScore;
@@ -35,6 +37,8 @@ public class Dto {
         private boolean hasResume;
         private String resumeFileName;
         private long resumeUploadedAt;
+        private String interviewRole;
+        private String experienceLevel;
         private long createdAt;
         private int totalInterviews;
         private double avgScore;
@@ -54,6 +58,20 @@ public class Dto {
         private boolean success;
         private int charCount;
         private String fileName;
+        private String message;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class InterviewPreferenceRequest {
+        private String interviewRole;
+        private String experienceLevel;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class InterviewPreferenceResponse {
+        private boolean success;
+        private String interviewRole;
+        private String experienceLevel;
         private String message;
     }
 
@@ -109,12 +127,16 @@ public class Dto {
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class StartInterviewRequest {
         private int durationMinutes; // 30 or 60
+        private String interviewRole;
+        private String experienceLevel;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class StartInterviewResponse {
         private String interviewId;
         private String resumeSummary;
+        private String interviewRole;
+        private String experienceLevel;
         private List<QuestionDto> questions;
         private int creditsDeducted;
         private int walletBalance;
@@ -144,6 +166,17 @@ public class Dto {
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class NextQuestionRequest {
+        private String interviewId;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class NextQuestionResponse {
+        private QuestionDto question;
+        private int questionIndex;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class CompleteInterviewRequest {
         private String interviewId;
     }
@@ -169,6 +202,8 @@ public class Dto {
     public static class InterviewHistoryItem {
         private String id;
         private String date;
+        private String interviewRole;
+        private String experienceLevel;
         private int durationMinutes;
         private ScoresDto scores;
         private int questionCount;
@@ -179,6 +214,8 @@ public class Dto {
     public static class InterviewDetailResponse {
         private String id;
         private String date;
+        private String interviewRole;
+        private String experienceLevel;
         private int durationMinutes;
         private ScoresDto scores;
         private List<QADetailDto> questions;
