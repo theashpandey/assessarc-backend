@@ -22,20 +22,24 @@ public class FeedbackService {
 
     private final FeedbackRepository feedbackRepository;
     private final UserRepository userRepository;
+    private static final int MAX_MESSAGE_LENGTH = 4000;
+    private static final int MAX_NAME_LENGTH = 120;
+    private static final int MAX_EMAIL_LENGTH = 254;
 
     private static final DateTimeFormatter FMT =
             DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a").withZone(ZoneId.of("Asia/Kolkata"));
 
     public void saveFeedback(String uid, String message, Integer rating, String type) {
-        if (message == null || message.isBlank()) {
-            throw new RuntimeException("Message cannot be empty");
+        String cleanedMessage = cleanMessage(message);
+        if (rating != null && (rating < 1 || rating > 5)) {
+            throw new RuntimeException("Rating must be between 1 and 5");
         }
         User user = userRepository.findById(uid).orElse(null);
         Feedback fb = Feedback.builder()
                 .uid(uid)
                 .userEmail(user != null ? user.getEmail() : null)
                 .userName(user != null ? user.getName() : null)
-                .message(message.trim())
+                .message(cleanedMessage)
                 .rating(rating)
                 .type(type != null ? type : "dashboard")
                 .createdAt(System.currentTimeMillis())
@@ -46,19 +50,31 @@ public class FeedbackService {
     }
 
     public void saveContact(String name, String email, String message) {
-        if (message == null || message.isBlank()) {
-            throw new RuntimeException("Message cannot be empty");
-        }
+        String cleanedMessage = cleanMessage(message);
         Feedback fb = Feedback.builder()
-                .userName(name != null ? name.trim() : "Anonymous")
-                .userEmail(email != null ? email.trim() : null)
-                .message(message.trim())
+                .userName(limit(name != null ? name.trim() : "Anonymous", MAX_NAME_LENGTH))
+                .userEmail(email != null && !email.isBlank() ? limit(email.trim(), MAX_EMAIL_LENGTH) : null)
+                .message(cleanedMessage)
                 .type("contact")
                 .createdAt(System.currentTimeMillis())
                 .isRead(false)
                 .build();
         feedbackRepository.save(fb);
-        log.info("Contact saved from {}: {}", email, message.substring(0, Math.min(50, message.length())));
+        log.info("Contact saved from {}: {}", email, cleanedMessage.substring(0, Math.min(50, cleanedMessage.length())));
+    }
+
+    private String cleanMessage(String message) {
+        if (message == null || message.isBlank()) {
+            throw new RuntimeException("Message cannot be empty");
+        }
+        return limit(message.replaceAll("[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]", " ")
+                .replaceAll(" +", " ")
+                .trim(), MAX_MESSAGE_LENGTH);
+    }
+
+    private String limit(String value, int maxLength) {
+        if (value == null) return null;
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     public List<Dto.FeedbackItem> getAllFeedback() {

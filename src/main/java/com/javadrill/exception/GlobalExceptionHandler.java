@@ -14,12 +14,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Dto.ApiError> handleRuntime(RuntimeException ex) {
-        log.error("Runtime error: {}", ex.getMessage());
-        HttpStatus status = resolveStatus(ex.getMessage());
+        String safeMessage = sanitize(ex.getMessage());
+        log.error("Runtime error: {}", safeMessage);
+        HttpStatus status = resolveStatus(safeMessage);
         return ResponseEntity.status(status).body(Dto.ApiError.builder()
                 .status(status.value())
                 .error(status.getReasonPhrase())
-                .message(ex.getMessage())
+                .message(safeMessage)
                 .timestamp(System.currentTimeMillis())
                 .build());
     }
@@ -36,7 +37,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Dto.ApiError> handleGeneral(Exception ex) {
-        log.error("Unexpected error: {}", ex.getMessage(), ex);
+        log.error("Unexpected error: {}", sanitize(ex.getMessage()), ex);
         return ResponseEntity.status(500).body(Dto.ApiError.builder()
                 .status(500)
                 .error("Internal Server Error")
@@ -48,13 +49,22 @@ public class GlobalExceptionHandler {
     private HttpStatus resolveStatus(String msg) {
         if (msg == null) return HttpStatus.INTERNAL_SERVER_ERROR;
         String lower = msg.toLowerCase();
-        if (lower.contains("unauthorized")) return HttpStatus.FORBIDDEN;
+        if (lower.contains("unauthorized") || lower.contains("does not belong")) return HttpStatus.FORBIDDEN;
         if (lower.contains("not found")) return HttpStatus.NOT_FOUND;
         if (lower.contains("insufficient") || lower.contains("please upload")
                 || lower.contains("invalid") || lower.contains("empty")
-                || lower.contains("duration") || lower.contains("too large")) {
+                || lower.contains("duration") || lower.contains("too large")
+                || lower.contains("required") || lower.contains("mismatch")
+                || lower.contains("already processed") || lower.contains("already been used")
+                || lower.contains("must be between")) {
             return HttpStatus.BAD_REQUEST;
         }
         return HttpStatus.INTERNAL_SERVER_ERROR;
+    }
+
+    private String sanitize(String message) {
+        if (message == null || message.isBlank()) return "An unexpected error occurred. Please try again.";
+        return message.replaceAll("(?i)([?&]key=)[^\\s&]+", "$1[REDACTED]")
+                .replaceAll("AIza[0-9A-Za-z_-]{20,}", "[REDACTED_API_KEY]");
     }
 }

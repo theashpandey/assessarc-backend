@@ -38,6 +38,9 @@ public class WalletAndResumeController {
     public ResponseEntity<Dto.CreateOrderResponse> createOrder(
             Authentication auth,
             @RequestBody Dto.CreateOrderRequest req) {
+        if (req == null) {
+            throw new RuntimeException("Credit pack is required");
+        }
         return ResponseEntity.ok(walletService.createOrder(
                 (String) auth.getPrincipal(), req.getCreditPack()));
     }
@@ -47,6 +50,9 @@ public class WalletAndResumeController {
     public ResponseEntity<Dto.VerifyPaymentResponse> verifyPayment(
             Authentication auth,
             @RequestBody Dto.VerifyPaymentRequest req) {
+        if (req == null) {
+            throw new RuntimeException("Payment verification details are required");
+        }
         return ResponseEntity.ok(walletService.verifyPayment(
                 (String) auth.getPrincipal(), req));
     }

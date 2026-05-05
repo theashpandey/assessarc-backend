@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.time.Duration;
 import java.util.*;
 
 @Slf4j
@@ -125,8 +126,14 @@ public class GeminiService {
     }
 
     public static class GeminiQuotaException extends RuntimeException {
-        public GeminiQuotaException(String message, Throwable cause) {
-            super(message, cause);
+        public GeminiQuotaException(String message) {
+            super(message);
+        }
+    }
+
+    public static class GeminiUnavailableException extends RuntimeException {
+        public GeminiUnavailableException(String message) {
+            super(message);
         }
     }
 
@@ -139,6 +146,11 @@ public class GeminiService {
 
     public String callGeminiWithTemp(String userPrompt, String systemPrompt, double temperature) {
         try {
+            String apiKey = props.getGemini().getApiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                throw new GeminiUnavailableException("AI service is not configured");
+            }
+
             var contents = new ArrayList<Map<String, Object>>();
 
             // System prompt as first user turn (Gemini doesn't have a dedicated system role)
@@ -161,7 +173,7 @@ public class GeminiService {
                     )
             );
 
-            String url = props.getGemini().getUrl() + "?key=" + props.getGemini().getApiKey();
+            String url = props.getGemini().getUrl() + "?key=" + apiKey;
 
             String responseStr = webClientBuilder.build()
                     .post().uri(url)
@@ -169,6 +181,7 @@ public class GeminiService {
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(String.class)
+                    .timeout(Duration.ofSeconds(45))
                     .block();
 
             var json = objectMapper.readTree(responseStr);
@@ -176,14 +189,17 @@ public class GeminiService {
             // Check for API errors
             if (json.has("error")) {
                 String errMsg = json.get("error").get("message").asText();
-                log.error("Gemini API error response: {}", errMsg);
-                throw new RuntimeException("Gemini API error: " + errMsg);
+                log.error("Gemini API error response: {}", sanitizeSecret(errMsg));
+                if (isQuotaMessage(errMsg)) {
+                    throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+                }
+                throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
             }
 
             var candidates = json.path("candidates");
             if (!candidates.isArray() || candidates.isEmpty()) {
-                log.warn("Gemini returned no candidates. Full response: {}", responseStr);
-                throw new RuntimeException("No response from AI");
+                log.warn("Gemini returned no candidates. Full response: {}", sanitizeSecret(responseStr));
+                throw new GeminiUnavailableException("AI service returned no response. Please try again.");
             }
 
             var parts = candidates.get(0).path("content").path("parts");
@@ -199,18 +215,20 @@ public class GeminiService {
         } catch (WebClientResponseException e) {
             if (isQuotaStatus(e.getStatusCode().value()) || isQuotaMessage(e.getResponseBodyAsString())) {
                 log.warn("Gemini quota/rate limit reached: status={} body={}",
-                        e.getStatusCode().value(), truncate(e.getResponseBodyAsString(), 180));
-                throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.", e);
+                        e.getStatusCode().value(), truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
+                throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
             }
-            throw e;
+            log.warn("Gemini request failed: status={} body={}",
+                    e.getStatusCode().value(), truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
+            throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
         } catch (RuntimeException e) {
             if (isQuotaMessage(e.getMessage())) {
-                throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.", e);
+                throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
             }
             throw e;
         } catch (Exception e) {
-            log.error("Gemini API call failed: {}", e.getMessage());
-            throw new RuntimeException("AI service unavailable: " + e.getMessage(), e);
+            log.error("Gemini API call failed: {}", sanitizeSecret(e.getMessage()));
+            throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
         }
     }
 
@@ -226,8 +244,8 @@ public class GeminiService {
 
         try {
             return callGemini(prompt, "You are a resume parser. Extract technical profile concisely. No fluff.");
-        } catch (GeminiQuotaException e) {
-            log.warn("Using resume fallback because Gemini quota is exhausted");
+        } catch (GeminiQuotaException | GeminiUnavailableException e) {
+            log.warn("Using resume fallback because Gemini is unavailable: {}", e.getMessage());
             return resumeText.substring(0, Math.min(1200, resumeText.length()));
         }
     }
@@ -273,8 +291,8 @@ public class GeminiService {
                     "You are Sarah, a senior interviewer who can interview software engineers, data roles, managers, architects, product, and HR roles. " +
                     "Generate natural, varied, role-specific interview questions. Return only valid JSON array.", 0.9);
             return safeParseJsonArray(raw);
-        } catch (GeminiQuotaException e) {
-            log.warn("Gemini quota exhausted while generating questions; using fallback questions");
+        } catch (GeminiQuotaException | GeminiUnavailableException e) {
+            log.warn("Gemini unavailable while generating questions; using fallback questions: {}", e.getMessage());
             return fallbackQuestions(count, role, allowedCategories);
         }
     }
@@ -301,8 +319,8 @@ public class GeminiService {
             String raw = callGeminiWithTemp(prompt,
                     "You maintain a reusable Java interview question bank. Return only valid JSON array.", 0.75);
             return safeParseJsonArray(raw);
-        } catch (GeminiQuotaException e) {
-            log.warn("Gemini quota exhausted while generating common questions; using fallback questions");
+        } catch (GeminiQuotaException | GeminiUnavailableException e) {
+            log.warn("Gemini unavailable while generating common questions; using fallback questions: {}", e.getMessage());
             return fallbackQuestions(count, "java_developer", CATEGORIES);
         }
     }
@@ -370,8 +388,8 @@ public class GeminiService {
                     "You are a strict interview evaluator. Score realistically based on answer quality. " +
                     "Do not give inflated scores. Return only valid JSON.", 0.3);
             return safeParseJsonObject(raw);
-        } catch (GeminiQuotaException e) {
-            log.warn("Gemini quota exhausted while scoring; using fallback scores");
+        } catch (GeminiQuotaException | GeminiUnavailableException e) {
+            log.warn("Gemini unavailable while scoring; using fallback scores: {}", e.getMessage());
             return fallbackScores(allowedCategories);
         }
     }
@@ -436,6 +454,12 @@ public class GeminiService {
     private String truncate(String value, int max) {
         if (value == null) return "";
         return value.length() <= max ? value : value.substring(0, max) + "...";
+    }
+
+    public String sanitizeSecret(String value) {
+        if (value == null) return "";
+        return value.replaceAll("(?i)([?&]key=)[^\\s&]+", "$1[REDACTED]")
+                .replaceAll("AIza[0-9A-Za-z_-]{20,}", "[REDACTED_API_KEY]");
     }
 
     private List<Map<String, String>> fallbackQuestions(int count, String role, List<String> allowedCategories) {

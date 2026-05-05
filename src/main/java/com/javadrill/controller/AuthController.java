@@ -26,10 +26,16 @@ public class AuthController {
      */
     @PostMapping("/login")
     public ResponseEntity<Dto.AuthResponse> login(
-            @RequestHeader("Authorization") String authHeader,
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
             @RequestBody(required = false) Dto.LoginRequest req) {
         try {
-            String idToken = authHeader.replace("Bearer ", "");
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.status(401).build();
+            }
+            String idToken = authHeader.substring("Bearer ".length()).trim();
+            if (idToken.isBlank()) {
+                return ResponseEntity.status(401).build();
+            }
             FirebaseToken decoded = FirebaseAuth.getInstance().verifyIdToken(idToken);
             var response = authService.loginOrRegister(decoded.getUid(), decoded,
                     req != null ? req.getReferralCode() : null);

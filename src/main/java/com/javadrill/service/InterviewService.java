@@ -369,6 +369,12 @@ public class InterviewService {
                     interview.getInterviewRole(), interview.getExperienceLevel());
         } catch (GeminiService.GeminiQuotaException e) {
             feedback = "Thanks, I got your answer. The AI feedback service is temporarily busy, so I'll save this response and keep the interview moving. Try to keep your next answer direct, structured, and supported with one concrete example.";
+        } catch (GeminiService.GeminiUnavailableException e) {
+            feedback = "Thanks, I got your answer. The AI feedback service is temporarily unavailable, so I'll save this response and keep the interview moving. Try to answer with a clear point, one concrete example, and the tradeoffs.";
+        } catch (Exception e) {
+            log.warn("Feedback generation failed for interview {} question {}: {}",
+                    req.getInterviewId(), idx, e.getMessage());
+            feedback = "Thanks, I got your answer. I could not generate detailed feedback for this one, but your response is saved. Let's keep the interview moving.";
         }
 
         // Persist to Firestore

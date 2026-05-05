@@ -22,6 +22,9 @@ public class InterviewController {
     public ResponseEntity<Dto.StartInterviewResponse> start(
             Authentication auth,
             @RequestBody Dto.StartInterviewRequest req) {
+        if (req == null) {
+            throw new RuntimeException("Interview start request is required");
+        }
         String uid = (String) auth.getPrincipal();
         log.info("START interview uid={} duration={}min", uid, req.getDurationMinutes());
         return ResponseEntity.ok(interviewService.startInterview(uid, req));
@@ -31,6 +34,9 @@ public class InterviewController {
     public ResponseEntity<Dto.SubmitAnswerResponse> submit(
             Authentication auth,
             @RequestBody Dto.SubmitAnswerRequest req) {
+        if (req == null || req.getInterviewId() == null || req.getInterviewId().isBlank()) {
+            throw new RuntimeException("Interview ID is required");
+        }
         String uid = (String) auth.getPrincipal();
         log.info("SUBMIT answer uid={} interviewId={} qIndex={}",
                 uid, req.getInterviewId(), req.getQuestionIndex());
@@ -41,6 +47,9 @@ public class InterviewController {
     public ResponseEntity<Dto.NextQuestionResponse> nextQuestion(
             Authentication auth,
             @RequestBody Dto.NextQuestionRequest req) {
+        if (req == null || req.getInterviewId() == null || req.getInterviewId().isBlank()) {
+            throw new RuntimeException("Interview ID is required");
+        }
         String uid = (String) auth.getPrincipal();
         log.info("NEXT question uid={} interviewId={}", uid, req.getInterviewId());
         return ResponseEntity.ok(interviewService.nextQuestion(uid, req));
@@ -54,6 +63,9 @@ public class InterviewController {
     public ResponseEntity<Dto.CompleteInterviewResponse> complete(
             Authentication auth,
             @RequestBody Dto.CompleteInterviewRequest req) {
+        if (req == null || req.getInterviewId() == null || req.getInterviewId().isBlank()) {
+            throw new RuntimeException("Interview ID is required");
+        }
         String uid = (String) auth.getPrincipal();
         log.info("COMPLETE interview uid={} interviewId={}", uid, req.getInterviewId());
         return ResponseEntity.ok(interviewService.completeInterview(uid, req.getInterviewId()));

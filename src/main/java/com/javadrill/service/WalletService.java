@@ -16,6 +16,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,9 @@ public class WalletService {
     }
 
     public Dto.CreateOrderResponse createOrder(String uid, int creditPack) {
+        if (uid == null || uid.isBlank()) {
+            throw new RuntimeException("Unauthorized");
+        }
         int amountPaise = switch (creditPack) {
             case 10 -> 1000;
             case 25 -> 2400;
@@ -70,19 +74,27 @@ public class WalletService {
         String receipt = "jd_" + uid.substring(0, Math.min(8, uid.length())) + "_"
                 + creditPack + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> order = webClientBuilder.build()
-                .post()
-                .uri("https://api.razorpay.com/v1/orders")
-                .headers(headers -> headers.setBasicAuth(keyId, keySecret))
-                .bodyValue(Map.of(
-                        "amount", amountPaise,
-                        "currency", "INR",
-                        "receipt", receipt
-                ))
-                .retrieve()
-                .bodyToMono(Map.class)
-                .block();
+        Map<String, Object> order;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> createdOrder = webClientBuilder.build()
+                    .post()
+                    .uri("https://api.razorpay.com/v1/orders")
+                    .headers(headers -> headers.setBasicAuth(keyId, keySecret))
+                    .bodyValue(Map.of(
+                            "amount", amountPaise,
+                            "currency", "INR",
+                            "receipt", receipt
+                    ))
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(30))
+                    .block();
+            order = createdOrder;
+        } catch (Exception e) {
+            log.error("Razorpay order creation failed for user {} pack {}: {}", uid, creditPack, e.getMessage());
+            throw new RuntimeException("Payment order creation failed. Please try again.");
+        }
 
         String orderId = order != null ? String.valueOf(order.get("id")) : null;
         if (orderId == null || orderId.isBlank() || "null".equals(orderId)) {
@@ -112,6 +124,20 @@ public class WalletService {
     }
 
     public Dto.VerifyPaymentResponse verifyPayment(String uid, Dto.VerifyPaymentRequest req) {
+        if (uid == null || uid.isBlank()) {
+            throw new RuntimeException("Unauthorized");
+        }
+        if (req == null
+                || isBlank(req.getRazorpayOrderId())
+                || isBlank(req.getRazorpayPaymentId())
+                || isBlank(req.getRazorpaySignature())) {
+            throw new RuntimeException("Payment verification details are required");
+        }
+        String keySecret = props.getRazorpay().getKeySecret();
+        if (keySecret == null || keySecret.isBlank()) {
+            throw new RuntimeException("Payment gateway is not configured");
+        }
+
         boolean valid = verifySignature(
                 req.getRazorpayOrderId(),
                 req.getRazorpayPaymentId(),
@@ -263,7 +289,8 @@ public class WalletService {
 
     private boolean verifySignature(String orderId, String paymentId, String signature) {
         try {
-            if (orderId == null || paymentId == null || signature == null) return false;
+            if (isBlank(orderId) || isBlank(paymentId) || isBlank(signature)
+                    || isBlank(props.getRazorpay().getKeySecret())) return false;
             String payload = orderId + "|" + paymentId;
             Mac mac = Mac.getInstance("HmacSHA256");
             SecretKeySpec key = new SecretKeySpec(
@@ -277,6 +304,10 @@ public class WalletService {
             log.error("Signature verification error: {}", e.getMessage());
             return false;
         }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private Dto.WalletTransactionItem toTransactionItem(WalletTransaction tx) {

@@ -12,6 +12,7 @@ public class AppProperties {
     private Gemini gemini = new Gemini();
     private Firebase firebase = new Firebase();
     private Razorpay razorpay = new Razorpay();
+    private Admin admin = new Admin();
     private Cors cors = new Cors();
     private Wallet wallet = new Wallet();
 
@@ -30,6 +31,12 @@ public class AppProperties {
     public static class Razorpay {
         private String keyId;
         private String keySecret;
+    }
+
+    @Data
+    public static class Admin {
+        private String allowedEmails = "";
+        private String allowedUids = "";
     }
 
     @Data
