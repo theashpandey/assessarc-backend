@@ -3,6 +3,8 @@ package com.javadrill.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.javadrill.config.AppProperties;
+import com.javadrill.model.GeminiUsageLog;
+import com.javadrill.repository.GeminiUsageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -10,6 +12,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Slf4j
@@ -20,17 +25,21 @@ public class GeminiService {
     private final AppProperties props;
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
+    private final GeminiUsageRepository geminiUsageRepository;
  
 
     private static final String DEFAULT_ROLE = "software_engineer";
+    private static final ZoneId USAGE_ZONE = ZoneId.of("Asia/Kolkata");
+    private static final DateTimeFormatter DAY_FMT = DateTimeFormatter.ISO_LOCAL_DATE.withZone(USAGE_ZONE);
+    private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM").withZone(USAGE_ZONE);
 
  
-    public  Map<String, Boolean> apis = Map.of(
-        "AIzaSyA5ZSxoQwpOY1L0s9tPK7gRxJBRZbLdqv0", true,
-        "AIzaSyCRs3WXzdC_b-PKpQBAcY2nagvZ9y-1tkU", true,
-        "AIzaSyDomS7-4cwoKy3B8DX5BsofQ-w0Kybsp7A", true,
-        "AIzaSyAkAY89mhhck93wQVV27bfV_-XT8PPyGU4", true
-);
+    public Map<String, Boolean> apis = new LinkedHashMap<>(Map.of(
+            "AIzaSyA5ZSxoQwpOY1L0s9tPK7gRxJBRZbLdqv0", true,
+            "AIzaSyCRs3WXzdC_b-PKpQBAcY2nagvZ9y-1tkU", true,
+            "AIzaSyDomS7-4cwoKy3B8DX5BsofQ-w0Kybsp7A", true,
+            "AIzaSyAkAY89mhhck93wQVV27bfV_-XT8PPyGU4", true
+    ));
     public String getActiveKey(Map<String, Boolean> apiKeys) {
       for (Map.Entry<String, Boolean> entry : apiKeys.entrySet()) {
           if (entry.getValue()) {
@@ -180,9 +189,19 @@ public class GeminiService {
         return callGeminiWithTemp(userPrompt, systemPrompt, 0.7);
     }
 
+    public String callGemini(String userPrompt, String systemPrompt, String userId, String interviewId, String callType) {
+        return callGeminiWithTemp(userPrompt, systemPrompt, 0.7, userId, interviewId, callType);
+    }
+
     public String callGeminiWithTemp(String userPrompt, String systemPrompt, double temperature) {
+        return callGeminiWithTemp(userPrompt, systemPrompt, temperature, null, null, "unknown");
+    }
+
+    public String callGeminiWithTemp(String userPrompt, String systemPrompt, double temperature,
+                                     String userId, String interviewId, String callType) {
        
       String apiKey = null;
+      boolean usageRecorded = false;
       try {
          //   String apiKey = props.getGemini().getApiKey();
            apiKey = getActiveKey(apis);
@@ -229,6 +248,8 @@ public class GeminiService {
             if (json.has("error")) {
                 String errMsg = json.get("error").get("message").asText();
                 log.error("Gemini API error response: {}", sanitizeSecret(errMsg));
+                recordUsage(userId, interviewId, callType, "ERROR", json.path("usageMetadata"), errMsg);
+                usageRecorded = true;
                 if (isQuotaMessage(errMsg)) {
                     throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
                 }
@@ -247,11 +268,15 @@ public class GeminiService {
                 if (part.has("text")) sb.append(part.get("text").asText());
             }
             String result = sb.toString().trim();
+            recordUsage(userId, interviewId, callType, "SUCCESS", json.path("usageMetadata"), null);
+            usageRecorded = true;
             log.debug("Gemini response ({}chars): {}", result.length(),
                     result.substring(0, Math.min(100, result.length())));
             return result;
 
         } catch (WebClientResponseException e) {
+            recordUsage(userId, interviewId, callType, "ERROR", null,
+                    "HTTP " + e.getStatusCode().value() + ": " + truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
             if (isQuotaStatus(e.getStatusCode().value()) || isQuotaMessage(e.getResponseBodyAsString())) {
                 log.warn("Gemini quota/rate limit reached: status={} body={}",
                         e.getStatusCode().value(), truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
@@ -261,6 +286,9 @@ public class GeminiService {
                     e.getStatusCode().value(), truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
             throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
         } catch (RuntimeException e) {
+            if (!usageRecorded) {
+                recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
+            }
             if (isQuotaMessage(e.getMessage())) {
                 throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
             }
@@ -268,6 +296,7 @@ public class GeminiService {
         } catch (Exception e) {
             log.error("Gemini API call failed: {}", sanitizeSecret(e.getMessage()));
             markKeyInactive(apis, apiKey);
+            recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
             throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
         }
     }
@@ -280,6 +309,10 @@ public class GeminiService {
     }
 
     public ResumeInsights parseResumeInsights(String resumeText) {
+        return parseResumeInsights(resumeText, null, null);
+    }
+
+    public ResumeInsights parseResumeInsights(String resumeText, String userId, String interviewId) {
         String excerpt = resumeText.substring(0, Math.min(5000, resumeText.length()));
         String prompt = """
                 Resume text:
@@ -305,7 +338,10 @@ public class GeminiService {
         try {
             Map<String, Object> raw = safeParseJsonObject(callGemini(
                     prompt,
-                    "You are a resume parser for realistic human-like mock interviews. Extract only evidence-backed summary and interview categories. Return only JSON."
+                    "You are a resume parser for realistic human-like mock interviews. Extract only evidence-backed summary and interview categories. Return only JSON.",
+                    userId,
+                    interviewId,
+                    "resume_parse"
             ));
             String summary = String.valueOf(raw.getOrDefault("summary", "")).trim();
             List<String> categories = extractCategories(raw.get("categories"));
@@ -332,6 +368,19 @@ public class GeminiService {
                                                         String role,
                                                         String experienceLevel,
                                                         List<String> allowedCategories) {
+        return generateQuestions(resumeSummary, existingTexts, count, role, experienceLevel, allowedCategories,
+                null, null, "question_generation");
+    }
+
+    public List<Map<String, String>> generateQuestions(String resumeSummary,
+                                                        List<String> existingTexts,
+                                                        int count,
+                                                        String role,
+                                                        String experienceLevel,
+                                                        List<String> allowedCategories,
+                                                        String userId,
+                                                        String interviewId,
+                                                        String callType) {
         String existing = existingTexts.isEmpty() ? "none" :
                 String.join("\n- ", existingTexts);
         String allowed = String.join(", ", allowedCategories);
@@ -361,7 +410,8 @@ public class GeminiService {
         try {
             String raw = callGeminiWithTemp(prompt,
                     "You are Sarah, a senior "+roleLabel+" interviewer at a top product company google. " +
-                    "Generate natural, varied, role-specific resume based interview questions that sound human and grounded in the candidate's actual background. Return only valid JSON array.", 0.9);
+                    "Generate natural, varied, role-specific resume based interview questions that sound human and grounded in the candidate's actual background. Return only valid JSON array.",
+                    0.9, userId, interviewId, callType);
             return safeParseJsonArray(raw);
         } catch (GeminiQuotaException | GeminiUnavailableException e) {
             log.warn("Gemini unavailable while generating questions; using fallback questions: {}", e.getMessage());
@@ -377,6 +427,14 @@ public class GeminiService {
     public String generateFeedback(String question, String category,
                                     String answer, String prevQuestion, String prevAnswer,
                                     String role, String experienceLevel) {
+        return generateFeedback(question, category, answer, prevQuestion, prevAnswer, role, experienceLevel,
+                null, null);
+    }
+
+    public String generateFeedback(String question, String category,
+                                    String answer, String prevQuestion, String prevAnswer,
+                                    String role, String experienceLevel,
+                                    String userId, String interviewId) {
         String prevCtx = "";
         if (prevQuestion != null && !prevQuestion.isBlank() && prevAnswer != null && !prevAnswer.isBlank()) {
             prevCtx = "Previous question: \"" + prevQuestion + "\"\n" +
@@ -398,7 +456,8 @@ public class GeminiService {
         return callGemini(prompt,
                 "You are Sarah, a friendly but professional senior "+role+" interviewer at google. " +
                 "Give short, natural spoken feedback — the kind you'd hear in a real interview room. " +
-                "Be specific, not generic. Sound human.");
+                "Be specific, not generic. Sound human.",
+                userId, interviewId, "answer_feedback");
     }
 
     /**
@@ -408,6 +467,15 @@ public class GeminiService {
                                                String role,
                                                String experienceLevel,
                                                List<String> allowedCategories) {
+        return calculateScores(qaList, role, experienceLevel, allowedCategories, null, null);
+    }
+
+    public Map<String, Object> calculateScores(List<Map<String, String>> qaList,
+                                               String role,
+                                               String experienceLevel,
+                                               List<String> allowedCategories,
+                                               String userId,
+                                               String interviewId) {
         var sb = new StringBuilder("Interview Q&As to evaluate:\n\n");
         sb.append("Target role: ").append(roleLabel(role)).append("\n");
         sb.append("Experience level: ").append(experienceLabel(experienceLevel)).append("\n");
@@ -431,7 +499,8 @@ public class GeminiService {
         try {
             String raw = callGeminiWithTemp(sb.toString(),
                     "You are a strict "+role+" interview evaluator at google. Score realistically based on answer quality. " +
-                    "Do not give inflated scores. Return only valid JSON.", 0.3);
+                    "Do not give inflated scores. Return only valid JSON.",
+                    0.3, userId, interviewId, "score_calculation");
             return safeParseJsonObject(raw);
         } catch (GeminiQuotaException | GeminiUnavailableException e) {
             log.warn("Gemini unavailable while scoring; using fallback scores: {}", e.getMessage());
@@ -486,6 +555,30 @@ public class GeminiService {
 
     private boolean isQuotaStatus(int status) {
         return status == 429;
+    }
+
+    private void recordUsage(String userId, String interviewId, String callType,
+                             String status, JsonNode usageMetadata, String errorMessage) {
+        long now = System.currentTimeMillis();
+        JsonNode usage = usageMetadata != null ? usageMetadata : objectMapper.createObjectNode();
+        int inputTokens = usage.path("promptTokenCount").asInt(0);
+        int outputTokens = usage.path("candidatesTokenCount").asInt(0);
+        int totalTokens = usage.path("totalTokenCount").asInt(inputTokens + outputTokens);
+        Instant instant = Instant.ofEpochMilli(now);
+
+        geminiUsageRepository.save(GeminiUsageLog.builder()
+                .userId(userId)
+                .interviewId(interviewId)
+                .callType(callType == null || callType.isBlank() ? "unknown" : callType)
+                .status(status)
+                .inputTokens(inputTokens)
+                .outputTokens(outputTokens)
+                .totalTokens(totalTokens)
+                .createdAt(now)
+                .day(DAY_FMT.format(instant))
+                .month(MONTH_FMT.format(instant))
+                .errorMessage(errorMessage == null ? null : truncate(errorMessage, 300))
+                .build());
     }
 
     private boolean isQuotaMessage(String message) {

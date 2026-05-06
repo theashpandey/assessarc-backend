@@ -76,7 +76,7 @@ public class ResumeService {
             log.debug("Resume truncated to {} chars for user {}", MAX_RESUME_CHARS, uid);
         }
 
-        GeminiService.ResumeInsights insights = geminiService.parseResumeInsights(text);
+        GeminiService.ResumeInsights insights = geminiService.parseResumeInsights(text, uid, null);
 
         // Save resume plus AI-derived profile in one pass.
         userRepository.updateResume(uid, text, fileName, insights.summary(), insights.categories());

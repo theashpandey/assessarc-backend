@@ -84,18 +84,21 @@ public class InterviewService {
         if (resumeSummary == null || resumeSummary.isBlank()
                 || resumeCategories == null || resumeCategories.isEmpty()) {
             log.info("Parsing resume insights for user {}", uid);
-            GeminiService.ResumeInsights insights = geminiService.parseResumeInsights(user.getResumeText());
+            GeminiService.ResumeInsights insights = geminiService.parseResumeInsights(user.getResumeText(), uid, null);
             resumeSummary = insights.summary();
             resumeCategories = insights.categories();
             userRepository.updateResumeInsights(uid, resumeSummary, resumeCategories);
         }
+
+        String interviewId = UUID.randomUUID().toString();
 
         // Build question list with smart dedup
         List<String> historicalQuestions = collectHistoricalQuestionTexts(uid, null);
         log.info("Building question set. User has {} historical questions.", historicalQuestions.size());
 
         List<Dto.QuestionDto> questions = buildQuestions(
-                resumeSummary, historicalQuestions, interviewRole, experienceLevel, resumeCategories);
+                resumeSummary, historicalQuestions, interviewRole, experienceLevel, resumeCategories,
+                uid, interviewId, "initial_question_generation");
         if (questions.size() < 2) {
             throw new RuntimeException("Could not generate enough questions. Please try again.");
         }
@@ -113,6 +116,7 @@ public class InterviewService {
                 .collect(Collectors.toList());
 
         Interview interview = Interview.builder()
+                .id(interviewId)
                 .userId(uid)
                 .status("STARTED")
                 .durationMinutes(durationMinutes)
@@ -147,7 +151,8 @@ public class InterviewService {
      */
     private List<Dto.QuestionDto> buildQuestions(String resumeSummary, List<String> existingQuestionTexts,
                                                  String interviewRole, String experienceLevel,
-                                                 List<String> resumeCategories) {
+                                                 List<String> resumeCategories,
+                                                 String uid, String interviewId, String callType) {
         List<String> allowedCategories = geminiService.categoriesForInterview(interviewRole, resumeCategories);
         List<Dto.QuestionDto> result = new ArrayList<>();
         Set<String> seenQuestionTexts = existingQuestionTexts.stream()
@@ -158,7 +163,8 @@ public class InterviewService {
         log.info("Generating {} fresh questions.", TARGET_QUESTION_COUNT);
         List<Map<String, String>> newQs = geminiService.generateQuestions(
                 resumeSummary, existingQuestionTexts, TARGET_QUESTION_COUNT,
-                interviewRole, experienceLevel, allowedCategories);
+                interviewRole, experienceLevel, allowedCategories,
+                uid, interviewId, callType);
 
         for (var qMap : newQs) {
             String text = qMap.get("question");
@@ -207,7 +213,8 @@ public class InterviewService {
                 interview.getInterviewRole(), user.getResumeCategories());
         List<Map<String, String>> generated = geminiService.generateQuestions(
                 interview.getResumeSummary(), existingTexts, TOP_UP_QUESTION_COUNT,
-                interview.getInterviewRole(), interview.getExperienceLevel(), allowedCategories);
+                interview.getInterviewRole(), interview.getExperienceLevel(), allowedCategories,
+                uid, interview.getId(), "next_question_generation");
 
         Dto.QuestionDto next = null;
         for (Map<String, String> qMap : generated) {
@@ -316,7 +323,8 @@ public class InterviewService {
             feedback = geminiService.generateFeedback(
                     currentQ.getQuestion(), currentQ.getCategory(),
                     answer, prevQuestion, prevAnswer,
-                    interview.getInterviewRole(), interview.getExperienceLevel());
+                    interview.getInterviewRole(), interview.getExperienceLevel(),
+                    uid, interview.getId());
         } catch (GeminiService.GeminiQuotaException e) {
             feedback = "Thanks, I got your answer. The AI feedback service is temporarily busy, so I'll save this response and keep the interview moving. Try to keep your next answer direct, structured, and supported with one concrete example.";
         } catch (GeminiService.GeminiUnavailableException e) {
@@ -372,7 +380,8 @@ public class InterviewService {
         List<String> allowedCategories = geminiService.categoriesForInterview(
                 interview.getInterviewRole(), user.getResumeCategories());
         Map<String, Object> rawScores = geminiService.calculateScores(
-                qaList, interview.getInterviewRole(), interview.getExperienceLevel(), allowedCategories);
+                qaList, interview.getInterviewRole(), interview.getExperienceLevel(), allowedCategories,
+                uid, interviewId);
 
         @SuppressWarnings("unchecked")
         Map<String, Integer> categories = convertCategoryScores(
@@ -514,7 +523,7 @@ public class InterviewService {
             Map<String, Object> raw = geminiService.safeParseJsonObject(geminiService.callGeminiWithTemp(
                     prompt,
                     "You are Sarah, a senior interviewer for the requested role. Analyze only this one session. Be specific, fair, and actionable. Return only JSON.",
-                    0.35));
+                    0.35, uid, interviewId, "single_interview_analysis"));
             int score = interview.getScores() != null ? interview.getScores().getOverall() : 0;
             Interview.Analysis analysis = Interview.Analysis.builder()
                     .overallAnalysis(String.valueOf(raw.getOrDefault("overallAnalysis", "")))

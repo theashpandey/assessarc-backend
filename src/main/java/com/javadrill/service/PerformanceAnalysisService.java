@@ -129,7 +129,8 @@ public class PerformanceAnalysisService {
                 """;
 
         try {
-            String raw = geminiService.callGeminiWithTemp(userPrompt, systemPrompt, 0.4);
+            String raw = geminiService.callGeminiWithTemp(userPrompt, systemPrompt, 0.4,
+                    uid, null, "performance_analysis");
             return parseAnalysisResponse(raw, last7.size(), avgScore, bestScore, trend);
         } catch (Exception e) {
             log.error("Analysis generation failed: {}", e.getMessage());

@@ -272,6 +272,52 @@ public class Dto {
         private String createdAt;
     }
 
+    // Gemini Admin Monitoring
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class GeminiUsageReport {
+        private String from;
+        private String to;
+        private GeminiUsageTotals total;
+        private List<GeminiUsageBucket> byDay;
+        private List<GeminiUsageBucket> byMonth;
+        private List<GeminiUsageBucket> byUser;
+        private List<GeminiUsageBucket> byInterview;
+        private List<GeminiUsageBucket> byCallType;
+        private List<GeminiUsageItem> recentRequests;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class GeminiUsageTotals {
+        private int requestCount;
+        private int successCount;
+        private int failedCount;
+        private int inputTokens;
+        private int outputTokens;
+        private int totalTokens;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class GeminiUsageBucket {
+        private String key;
+        private GeminiUsageTotals totals;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class GeminiUsageItem {
+        private String id;
+        private String userId;
+        private String interviewId;
+        private String callType;
+        private String status;
+        private int inputTokens;
+        private int outputTokens;
+        private int totalTokens;
+        private long createdAt;
+        private String day;
+        private String month;
+        private String errorMessage;
+    }
+
     // ── Performance Analysis ──
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class PerformanceAnalysisResponse {
