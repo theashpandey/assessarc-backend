@@ -58,6 +58,8 @@ public class Dto {
         private boolean success;
         private int charCount;
         private String fileName;
+        private String resumeSummary;
+        private List<String> resumeCategories;
         private String message;
     }
 

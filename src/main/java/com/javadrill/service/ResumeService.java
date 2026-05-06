@@ -76,15 +76,19 @@ public class ResumeService {
             log.debug("Resume truncated to {} chars for user {}", MAX_RESUME_CHARS, uid);
         }
 
-        // Save to Firestore (clears cached AI summary so it gets re-generated)
-        userRepository.updateResume(uid, text, fileName);
+        GeminiService.ResumeInsights insights = geminiService.parseResumeInsights(text);
+
+        // Save resume plus AI-derived profile in one pass.
+        userRepository.updateResume(uid, text, fileName, insights.summary(), insights.categories());
         log.info("Resume saved for user {} ({} chars, {} KB)", uid, text.length(), fileSizeKb);
 
         return Dto.ResumeUploadResponse.builder()
                 .success(true)
                 .charCount(text.length())
                 .fileName(fileName)
-                .message("Resume uploaded successfully! Your profile is ready for interviews.")
+                .resumeSummary(insights.summary())
+                .resumeCategories(insights.categories())
+                .message("Resume uploaded successfully! Your interview profile is ready.")
                 .build();
     }
 

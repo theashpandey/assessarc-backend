@@ -120,13 +120,15 @@ public class UserRepository {
         }
     }
 
-    public void updateResume(String uid, String resumeText, String fileName) {
+    public void updateResume(String uid, String resumeText, String fileName,
+                             String resumeSummary, List<String> resumeCategories) {
         try {
             Map<String, Object> updates = new HashMap<>();
             updates.put("resumeText", resumeText);
             updates.put("resumeFileName", fileName);
             updates.put("resumeUploadedAt", System.currentTimeMillis());
-            updates.put("resumeSummary", null); // reset cached summary
+            updates.put("resumeSummary", resumeSummary);
+            updates.put("resumeCategories", resumeCategories == null ? List.of() : resumeCategories);
 
             firestore.collection(COLLECTION).document(uid).update(updates).get();
         } catch (InterruptedException | ExecutionException e) {
@@ -135,12 +137,14 @@ public class UserRepository {
         }
     }
 
-    public void updateResumeSummary(String uid, String summary) {
+    public void updateResumeInsights(String uid, String summary, List<String> categories) {
         try {
-            firestore.collection(COLLECTION).document(uid)
-                    .update("resumeSummary", summary).get();
+            Map<String, Object> updates = new HashMap<>();
+            updates.put("resumeSummary", summary);
+            updates.put("resumeCategories", categories == null ? List.of() : categories);
+            firestore.collection(COLLECTION).document(uid).update(updates).get();
         } catch (InterruptedException | ExecutionException e) {
-            log.error("Error updating resume summary for {}: {}", uid, e.getMessage());
+            log.error("Error updating resume insights for {}: {}", uid, e.getMessage());
         }
     }
 

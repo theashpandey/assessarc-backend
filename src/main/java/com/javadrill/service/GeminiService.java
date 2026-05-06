@@ -22,20 +22,9 @@ public class GeminiService {
     private final ObjectMapper objectMapper;
  
 
-    private static final List<String> CATEGORIES = List.of(
-            "java_core", "oops", "multithreading", "spring",
-            "system_design", "problem_solving", "behavioral"
-    );
-    public static final Map<String, String> CAT_LABELS = Map.of(
-            "java_core", "Java Core",
-            "oops", "OOP & Design Patterns",
-            "multithreading", "Multithreading & Concurrency",
-            "spring", "Spring Boot",
-            "system_design", "System Design",
-            "problem_solving", "Problem Solving",
-            "behavioral", "Behavioral"
-    );
-    
+    private static final String DEFAULT_ROLE = "software_engineer";
+
+ 
     public  Map<String, Boolean> apis = Map.of(
         "AIzaSyA5ZSxoQwpOY1L0s9tPK7gRxJBRZbLdqv0", true,
         "AIzaSyCRs3WXzdC_b-PKpQBAcY2nagvZ9y-1tkU", true,
@@ -55,6 +44,7 @@ public class GeminiService {
   }
     private static final List<String> COMMON_CATEGORIES = List.of("problem_solving", "behavioral");
     private static final Map<String, String> ROLE_LABELS = Map.ofEntries(
+            Map.entry("software_engineer", "Software Engineer"),
             Map.entry("java_developer", "Java Developer"),
             Map.entry("python_developer", "Python Developer"),
             Map.entry("react_developer", "React Developer"),
@@ -87,6 +77,7 @@ public class GeminiService {
             Map.entry("35_plus", "35+ years")
     );
     private static final Map<String, List<String>> ROLE_CATEGORIES = Map.ofEntries(
+            Map.entry("software_engineer", List.of("programming", "api_design", "databases", "system_design", "testing", "debugging")),
             Map.entry("java_developer", List.of("java_core", "oops", "multithreading", "spring", "microservices", "system_design")),
             Map.entry("python_developer", List.of("python_core", "oops", "django_fastapi", "api_design", "databases", "testing")),
             Map.entry("react_developer", List.of("javascript", "react", "frontend_architecture", "testing", "api_design", "performance")),
@@ -105,10 +96,12 @@ public class GeminiService {
             Map.entry("hr_recruiter", List.of("hiring", "sourcing", "employee_relations", "communication", "process_management", "stakeholder_management"))
     );
 
+    public record ResumeInsights(String summary, List<String> categories) {}
+
     public String normalizeRole(String role) {
-        if (role == null || role.isBlank()) return "java_developer";
+        if (role == null || role.isBlank()) return DEFAULT_ROLE;
         String normalized = role.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
-        return ROLE_CATEGORIES.containsKey(normalized) ? normalized : "java_developer";
+        return ROLE_CATEGORIES.containsKey(normalized) ? normalized : DEFAULT_ROLE;
     }
 
     public boolean isSupportedRole(String role) {
@@ -118,9 +111,9 @@ public class GeminiService {
     }
 
     public String normalizeExperience(String experience) {
-        if (experience == null || experience.isBlank()) return "3_5";
+        if (experience == null || experience.isBlank()) return "1_3";
         String normalized = experience.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
-        return EXPERIENCE_LABELS.containsKey(normalized) ? normalized : "3_5";
+        return EXPERIENCE_LABELS.containsKey(normalized) ? normalized : "1_3";
     }
 
     public boolean isSupportedExperience(String experience) {
@@ -130,22 +123,35 @@ public class GeminiService {
     }
 
     public String roleLabel(String role) {
-        return ROLE_LABELS.getOrDefault(normalizeRole(role), "Java Developer");
+        return ROLE_LABELS.getOrDefault(normalizeRole(role), "Software Engineer");
     }
 
     public String experienceLabel(String experience) {
-        return EXPERIENCE_LABELS.getOrDefault(normalizeExperience(experience), "3-5 years");
+        return EXPERIENCE_LABELS.getOrDefault(normalizeExperience(experience), "1-3 years");
     }
 
     public List<String> categoriesForRole(String role) {
         LinkedHashSet<String> categories = new LinkedHashSet<>(COMMON_CATEGORIES);
-        categories.addAll(ROLE_CATEGORIES.getOrDefault(normalizeRole(role), ROLE_CATEGORIES.get("java_developer")));
+        categories.addAll(ROLE_CATEGORIES.getOrDefault(normalizeRole(role), ROLE_CATEGORIES.get(DEFAULT_ROLE)));
         return new ArrayList<>(categories);
+    }
+
+    public List<String> categoriesForInterview(String role, List<String> resumeCategories) {
+        LinkedHashSet<String> categories = new LinkedHashSet<>(COMMON_CATEGORIES);
+        if (resumeCategories != null) {
+            for (String category : resumeCategories) {
+                String normalized = normalizeCategory(category);
+                if (!normalized.isBlank()) {
+                    categories.add(normalized);
+                }
+            }
+        }
+        categories.addAll(ROLE_CATEGORIES.getOrDefault(normalizeRole(role), ROLE_CATEGORIES.get(DEFAULT_ROLE)));
+        return categories.stream().limit(8).toList();
     }
 
     public String categoryLabel(String category) {
         if (category == null || category.isBlank()) return "";
-        if (CAT_LABELS.containsKey(category)) return CAT_LABELS.get(category);
         String[] parts = category.split("_");
         List<String> words = new ArrayList<>();
         for (String part : parts) {
@@ -270,17 +276,49 @@ public class GeminiService {
      * Parse resume — returns concise summary for question generation
      */
     public String parseResume(String resumeText) {
-        String prompt = "Resume text:\n\n" + resumeText.substring(0, Math.min(4000, resumeText.length()))
-                + "\n\nExtract and summarize: candidate name, years of experience, "
-                + "primary role, technical and business skills, frameworks, tools, projects, "
-                + "leadership or HR responsibilities, job titles, and tech stack. "
-                + "Be concise, under 250 words. Focus on evidence useful for role-based interview questions.";
+        return parseResumeInsights(resumeText).summary();
+    }
+
+    public ResumeInsights parseResumeInsights(String resumeText) {
+        String excerpt = resumeText.substring(0, Math.min(5000, resumeText.length()));
+        String prompt = """
+                Resume text:
+
+                %s
+
+                Analyze this resume for a mock interview platform.
+                Return ONLY valid JSON with:
+                {
+                  "summary": "under 250 words, concise but specific",
+                  "categories": ["category_one", "category_two", "category_three"]
+                }
+
+                Category rules:
+                - categories must be lower_snake_case
+                - choose 4 to 6 interview categories
+                - categories must reflect the candidate's actual skills, projects, tools, architecture depth, leadership, product, QA, HR, or domain strengths
+                - include role-relevant categories such as e.g. spring, microservices, react, sql, machine_learning, stakeholder_management, hiring, ci_cd, testing, system_design when supported by the resume
+                - always include problem_solving if the resume shows technical or analytical work
+                - use behavioral for people-heavy or leadership-heavy profiles when relevant
+                """.formatted(excerpt);
 
         try {
-            return callGemini(prompt, "You are a resume parser. Extract technical profile concisely. No fluff.");
+            Map<String, Object> raw = safeParseJsonObject(callGemini(
+                    prompt,
+                    "You are a resume parser for realistic human-like mock interviews. Extract only evidence-backed summary and interview categories. Return only JSON."
+            ));
+            String summary = String.valueOf(raw.getOrDefault("summary", "")).trim();
+            List<String> categories = extractCategories(raw.get("categories"));
+            if (summary.isBlank()) {
+                summary = fallbackResumeSummary(resumeText);
+            }
+            if (categories.isEmpty()) {
+                categories = fallbackResumeCategories(resumeText);
+            }
+            return new ResumeInsights(summary, categories);
         } catch (GeminiQuotaException | GeminiUnavailableException e) {
-            log.warn("Using resume fallback because Gemini is unavailable: {}", e.getMessage());
-            return resumeText.substring(0, Math.min(1200, resumeText.length()));
+            log.warn("Using resume insights fallback because Gemini is unavailable: {}", e.getMessage());
+            return new ResumeInsights(fallbackResumeSummary(resumeText), fallbackResumeCategories(resumeText));
         }
     }
 
@@ -307,10 +345,10 @@ public class GeminiService {
                 "Already selected questions (DO NOT ask similar ones):\n- %s\n\n" +
                 "Generate exactly %d NEW, unique interview questions for this role and experience level. " +
                 "Make them conversational, natural, NOT robotic. " +
-                "Questions must be resume-based: use the candidate's real projects, tools, responsibilities, and tech stack where possible. " +
+                "Questions must be resume-based: use the candidate's real projects, tools, responsibilities, achievements, and tech stack where possible. " +
                 "Vary categories across: %s\n" +
                 "Problem solving and behavioral are common for every role; other categories must match the chosen role and resume. " +
-                "Each question should sound like a real senior interviewer asking it.\n" +
+                "Each question should sound like a real senior interviewer asking it in a live interview. Avoid textbook phrasing, list-style wording, and generic prompts.\n" +
                 "Tune depth to %s: fresher questions should test fundamentals; senior questions should test tradeoffs, ownership, architecture, leadership, and impact.\n\n" +
                 "Return ONLY valid JSON array:\n" +
                 "[{\"question\":\"...\",\"category\":\"java_core\",\"difficulty\":\"medium\"}, ...]\n" +
@@ -322,8 +360,8 @@ public class GeminiService {
 
         try {
             String raw = callGeminiWithTemp(prompt,
-                    "You are Sarah, a senior interviewer who can interview software engineers, data roles, managers, architects, product, and HR roles. " +
-                    "Generate natural, varied, role-specific interview questions. Return only valid JSON array.", 0.9);
+                    "You are Sarah, a senior "+roleLabel+" interviewer at a top product company google. " +
+                    "Generate natural, varied, role-specific resume based interview questions that sound human and grounded in the candidate's actual background. Return only valid JSON array.", 0.9);
             return safeParseJsonArray(raw);
         } catch (GeminiQuotaException | GeminiUnavailableException e) {
             log.warn("Gemini unavailable while generating questions; using fallback questions: {}", e.getMessage());
@@ -331,33 +369,6 @@ public class GeminiService {
         }
     }
 
-    public List<Map<String, String>> generayyteCommonQuestions1(List<String> existingTexts, int count) {
-        String existing = existingTexts.isEmpty() ? "none" : String.join("\n- ", existingTexts);
-        String prompt = String.format(
-                "Already available common Java interview questions (DO NOT ask similar ones):\n- %s\n\n" +
-                "Generate exactly %d reusable COMMON Java interview questions for a shared question bank. " +
-                "These questions must be useful for most Java candidates and must NOT mention a candidate resume, " +
-                "specific company, specific project, years of experience, personal background, or uploaded profile. " +
-                "Prefer evergreen fundamentals, practical Spring Boot, OOP, collections, concurrency, REST, testing, " +
-                "system design basics, debugging, and behavioral questions that any Java candidate can answer.\n\n" +
-                "Return ONLY valid JSON array:\n" +
-                "[{\"question\":\"...\",\"category\":\"java_core\",\"difficulty\":\"medium\"}, ...]\n" +
-                "category must be one of: %s\n" +
-                "difficulty: easy | medium | hard",
-                existing,
-                count,
-                String.join(", ", CATEGORIES)
-        );
-
-        try {
-            String raw = callGeminiWithTemp(prompt,
-                    "You maintain a reusable Java interview question bank. Return only valid JSON array.", 0.75);
-            return safeParseJsonArray(raw);
-        } catch (GeminiQuotaException | GeminiUnavailableException e) {
-            log.warn("Gemini unavailable while generating common questions; using fallback questions: {}", e.getMessage());
-            return fallbackQuestions(count, "java_developer", CATEGORIES);
-        }
-    }
 
     /**
      * Generate conversational feedback for a single answer.
@@ -385,7 +396,7 @@ public class GeminiService {
                 "Sound warm but professional. No bullet points. No markdown. Conversational spoken style.";
 
         return callGemini(prompt,
-                "You are Sarah, a friendly but professional senior interviewer. " +
+                "You are Sarah, a friendly but professional senior "+role+" interviewer at google. " +
                 "Give short, natural spoken feedback — the kind you'd hear in a real interview room. " +
                 "Be specific, not generic. Sound human.");
     }
@@ -419,7 +430,7 @@ public class GeminiService {
 
         try {
             String raw = callGeminiWithTemp(sb.toString(),
-                    "You are a strict interview evaluator. Score realistically based on answer quality. " +
+                    "You are a strict "+role+" interview evaluator at google. Score realistically based on answer quality. " +
                     "Do not give inflated scores. Return only valid JSON.", 0.3);
             return safeParseJsonObject(raw);
         } catch (GeminiQuotaException | GeminiUnavailableException e) {
@@ -528,5 +539,48 @@ public class GeminiService {
                 "javaDepth", 65,
                 "categories", categories
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> extractCategories(Object rawCategories) {
+        LinkedHashSet<String> categories = new LinkedHashSet<>(COMMON_CATEGORIES);
+        if (rawCategories instanceof List<?> rawList) {
+            for (Object item : rawList) {
+                String normalized = normalizeCategory(String.valueOf(item));
+                if (!normalized.isBlank()) {
+                    categories.add(normalized);
+                }
+            }
+        }
+        return categories.stream().limit(8).toList();
+    }
+
+    private List<String> fallbackResumeCategories(String resumeText) {
+        String inferredRole = inferRoleFromResume(resumeText);
+        return categoriesForRole(inferredRole);
+    }
+
+    private String fallbackResumeSummary(String resumeText) {
+        return resumeText.substring(0, Math.min(1200, resumeText.length()));
+    }
+
+    private String inferRoleFromResume(String resumeText) {
+        String lower = resumeText == null ? "" : resumeText.toLowerCase(Locale.ROOT);
+        if (lower.contains("spring") || lower.contains("java ")) return "java_developer";
+        if (lower.contains("react") || lower.contains("frontend")) return "frontend_engineer";
+        if (lower.contains("python") || lower.contains("fastapi") || lower.contains("django")) return "python_developer";
+        if (lower.contains("kubernetes") || lower.contains("devops") || lower.contains("terraform")) return "devops_engineer";
+        if (lower.contains("machine learning") || lower.contains("data science")) return "data_scientist";
+        if (lower.contains("product manager") || lower.contains("roadmap")) return "product_manager";
+        if (lower.contains("recruiter") || lower.contains("talent acquisition") || lower.contains("hiring")) return "hr_recruiter";
+        return DEFAULT_ROLE;
+    }
+
+    private String normalizeCategory(String raw) {
+        if (raw == null || raw.isBlank()) return "";
+        return raw.trim().toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_|_$", "");
     }
 }

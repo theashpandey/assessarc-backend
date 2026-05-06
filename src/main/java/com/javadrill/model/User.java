@@ -27,6 +27,7 @@ public class User {
     private String resumeFileName;
     private long resumeUploadedAt;
     private String resumeSummary; // cached AI summary
+    private java.util.List<String> resumeCategories;
 
     // Interview targeting preferences
     private String interviewRole;

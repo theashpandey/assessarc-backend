@@ -80,17 +80,22 @@ public class InterviewService {
         // Deduct wallet first (reserve credits)
         // Parse resume — use cached summary if exists to save Gemini calls
         String resumeSummary = user.getResumeSummary();
-        if (resumeSummary == null || resumeSummary.isBlank()) {
-            log.info("Parsing resume for user {}", uid);
-            resumeSummary = geminiService.parseResume(user.getResumeText());
-            userRepository.updateResumeSummary(uid, resumeSummary);
+        List<String> resumeCategories = user.getResumeCategories();
+        if (resumeSummary == null || resumeSummary.isBlank()
+                || resumeCategories == null || resumeCategories.isEmpty()) {
+            log.info("Parsing resume insights for user {}", uid);
+            GeminiService.ResumeInsights insights = geminiService.parseResumeInsights(user.getResumeText());
+            resumeSummary = insights.summary();
+            resumeCategories = insights.categories();
+            userRepository.updateResumeInsights(uid, resumeSummary, resumeCategories);
         }
 
         // Build question list with smart dedup
         List<String> historicalQuestions = collectHistoricalQuestionTexts(uid, null);
         log.info("Building question set. User has {} historical questions.", historicalQuestions.size());
 
-        List<Dto.QuestionDto> questions = buildQuestions(resumeSummary, historicalQuestions, interviewRole, experienceLevel);
+        List<Dto.QuestionDto> questions = buildQuestions(
+                resumeSummary, historicalQuestions, interviewRole, experienceLevel, resumeCategories);
         if (questions.size() < 2) {
             throw new RuntimeException("Could not generate enough questions. Please try again.");
         }
@@ -141,8 +146,9 @@ public class InterviewService {
      * - No duplicate questions within a session
      */
     private List<Dto.QuestionDto> buildQuestions(String resumeSummary, List<String> existingQuestionTexts,
-                                                 String interviewRole, String experienceLevel) {
-        List<String> allowedCategories = geminiService.categoriesForRole(interviewRole);
+                                                 String interviewRole, String experienceLevel,
+                                                 List<String> resumeCategories) {
+        List<String> allowedCategories = geminiService.categoriesForInterview(interviewRole, resumeCategories);
         List<Dto.QuestionDto> result = new ArrayList<>();
         Set<String> seenQuestionTexts = existingQuestionTexts.stream()
                 .map(this::normalizeQuestionText)
@@ -195,7 +201,10 @@ public class InterviewService {
                 .filter(Objects::nonNull)
                 .forEach(existingTexts::add);
 
-        List<String> allowedCategories = geminiService.categoriesForRole(interview.getInterviewRole());
+        User user = userRepository.findById(uid)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        List<String> allowedCategories = geminiService.categoriesForInterview(
+                interview.getInterviewRole(), user.getResumeCategories());
         List<Map<String, String>> generated = geminiService.generateQuestions(
                 interview.getResumeSummary(), existingTexts, TOP_UP_QUESTION_COUNT,
                 interview.getInterviewRole(), interview.getExperienceLevel(), allowedCategories);
@@ -358,7 +367,10 @@ public class InterviewService {
                 .collect(Collectors.toList());
 
         // Calculate scores
-        List<String> allowedCategories = geminiService.categoriesForRole(interview.getInterviewRole());
+        User user = userRepository.findById(uid)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        List<String> allowedCategories = geminiService.categoriesForInterview(
+                interview.getInterviewRole(), user.getResumeCategories());
         Map<String, Object> rawScores = geminiService.calculateScores(
                 qaList, interview.getInterviewRole(), interview.getExperienceLevel(), allowedCategories);
 
