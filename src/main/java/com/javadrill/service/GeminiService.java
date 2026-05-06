@@ -325,12 +325,14 @@ public class GeminiService {
                   "summary": "under 250 words, concise but specific",
                   "categories": ["category_one", "category_two", "category_three"]
                 }
+                Summary rules:
+                - extract and summarize candidate name, years of experience, skills and frameworks, projects, job titles, tech stack.
+                - Be concise, under 250 words. Focus on skills.
 
                 Category rules:
                 - categories must be lower_snake_case
                 - choose 4 to 6 interview categories
-                - categories must reflect the candidate's actual skills, projects, tools, architecture depth, leadership, product, QA, HR, or domain strengths
-                - include role-relevant categories such as e.g. spring, microservices, react, sql, machine_learning, stakeholder_management, hiring, ci_cd, testing, system_design when supported by the resume
+                - categories must reflect the candidate's actual more focused tech skills, cloud skills, tools, architecture depth, leadership, domain strengths etc in resume
                 - always include problem_solving if the resume shows technical or analytical work
                 - use behavioral for people-heavy or leadership-heavy profiles when relevant
                 """.formatted(excerpt);
