@@ -200,11 +200,11 @@ public class GeminiService {
     public String callGeminiWithTemp(String userPrompt, String systemPrompt, double temperature,
                                      String userId, String interviewId, String callType) {
        
-      String apiKey = null;
+     // String apiKey = null;
       boolean usageRecorded = false;
       try {
-         //   String apiKey = props.getGemini().getApiKey();
-           apiKey = getActiveKey(apis);
+          String apiKey = props.getGemini().getApiKey();
+          // apiKey = getActiveKey(apis);
             if (apiKey == null || apiKey.isBlank()) {
                 throw new GeminiUnavailableException("AI service is not configured");
             }
@@ -295,7 +295,7 @@ public class GeminiService {
             throw e;
         } catch (Exception e) {
             log.error("Gemini API call failed: {}", sanitizeSecret(e.getMessage()));
-            markKeyInactive(apis, apiKey);
+           // markKeyInactive(apis, apiKey);
             recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
             throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
         }
