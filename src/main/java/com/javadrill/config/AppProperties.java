@@ -19,7 +19,7 @@ public class AppProperties {
     @Data
     public static class Gemini {
         private String apiKey;
-        private String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+        private String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
     }
 
     @Data
