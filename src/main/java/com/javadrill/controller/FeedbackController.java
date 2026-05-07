@@ -32,7 +32,7 @@ public class FeedbackController {
             throw new RuntimeException("Message cannot be empty");
         }
         String uid = (String) auth.getPrincipal();
-        feedbackService.saveFeedback(uid, req.getMessage(), req.getRating(), "dashboard");
+        feedbackService.saveFeedback(uid, req.getMessage(), req.getRating(), req.getType());
         return ResponseEntity.ok(new Dto.SimpleResponse(true, "Feedback received. Thank you!"));
     }
 

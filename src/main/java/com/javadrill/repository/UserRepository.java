@@ -122,16 +122,6 @@ public class UserRepository {
         }
     }
 
-    public void updateWallet(String uid, int newBalance) {
-        try {
-            firestore.collection(COLLECTION).document(uid)
-                    .update("walletCredits", newBalance).get();
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("Error updating wallet for {}: {}", uid, e.getMessage());
-            throw new RuntimeException("Failed to update wallet", e);
-        }
-    }
-
     public void updateResume(String uid, String resumeText, String fileName,
                              String resumeSummary, List<String> resumeCategories) {
         try {

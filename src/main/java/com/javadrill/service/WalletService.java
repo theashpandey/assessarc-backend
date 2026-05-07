@@ -260,33 +260,6 @@ public class WalletService {
         return "rzp_" + paymentId.replaceAll("[^A-Za-z0-9_-]", "_");
     }
 
-    public void recordDebit(String uid, int amount, int balanceBefore, int balanceAfter,
-                            String description, String interviewId) {
-        walletTransactionRepository.save(WalletTransaction.builder()
-                .uid(uid)
-                .type("debit")
-                .amount(amount)
-                .balanceBefore(balanceBefore)
-                .balanceAfter(balanceAfter)
-                .description(description)
-                .interviewId(interviewId)
-                .createdAt(System.currentTimeMillis())
-                .build());
-    }
-
-    public void recordCredit(String uid, int amount, int balanceBefore, int balanceAfter,
-                             String description) {
-        walletTransactionRepository.save(WalletTransaction.builder()
-                .uid(uid)
-                .type("credit")
-                .amount(amount)
-                .balanceBefore(balanceBefore)
-                .balanceAfter(balanceAfter)
-                .description(description)
-                .createdAt(System.currentTimeMillis())
-                .build());
-    }
-
     private boolean verifySignature(String orderId, String paymentId, String signature) {
         try {
             if (isBlank(orderId) || isBlank(paymentId) || isBlank(signature)

@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 public class InterviewService {
 
     private static final int TARGET_QUESTION_COUNT = 10;
+    private static final int HISTORICAL_INTERVIEW_LOOKBACK = 1;
     private static final String ANALYSIS_PENDING_MESSAGE =
             "Your answers are saved. The AI scoring service is temporarily unavailable, so your detailed report is pending. Please check Performance again later.";
     private static final DateTimeFormatter DATE_FMT =
@@ -258,7 +259,7 @@ public class InterviewService {
     }
 
     private List<String> collectHistoricalQuestionTexts(String uid, String excludeInterviewId) {
-        return interviewRepository.findAllCompletedByUserId(uid).stream()
+        return interviewRepository.findRecentCompletedByUserId(uid, HISTORICAL_INTERVIEW_LOOKBACK).stream()
                 .filter(i -> excludeInterviewId == null || !excludeInterviewId.equals(i.getId()))
                 .filter(i -> i.getQuestions() != null)
                 .flatMap(i -> i.getQuestions().stream())

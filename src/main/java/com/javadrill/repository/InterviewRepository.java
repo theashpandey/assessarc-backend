@@ -62,6 +62,10 @@ public class InterviewRepository {
         return fetchAndFilter(userId, Integer.MAX_VALUE);
     }
 
+    public List<Interview> findRecentCompletedByUserId(String userId, int limit) {
+        return fetchAndFilter(userId, limit);
+    }
+
     public List<Interview> findReportableByUserId(String userId, int limit) {
         return fetchByStatuses(userId, Set.of("COMPLETED", "ANALYSIS_PENDING"), limit);
     }
@@ -187,29 +191,6 @@ public class InterviewRepository {
         }
     }
 
-    public void appendQuestion(String interviewId, Interview.QuestionAnswer question) {
-        try {
-            var docRef = firestore.collection(COLLECTION).document(interviewId);
-            firestore.runTransaction(tx -> {
-                var snap = tx.get(docRef).get();
-                if (!snap.exists()) throw new RuntimeException("Interview not found: " + interviewId);
-
-                Interview iv = snap.toObject(Interview.class);
-                if (iv == null) throw new RuntimeException("Interview not found: " + interviewId);
-                List<Interview.QuestionAnswer> questions = iv.getQuestions() != null
-                        ? new ArrayList<>(iv.getQuestions()) : new ArrayList<>();
-                questions.add(question);
-                iv.setQuestions(questions);
-
-                tx.set(docRef, iv);
-                return null;
-            }).get();
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("Error appending question for interview {}: {}", interviewId, e.getMessage());
-            throw new RuntimeException("Failed to add next question", e);
-        }
-    }
-
     public int moveNextPooledQuestionToAsked(String interviewId) {
         try {
             var docRef = firestore.collection(COLLECTION).document(interviewId);
@@ -308,12 +289,4 @@ public class InterviewRepository {
         }
     }
 
-    public void abandonInterview(String interviewId) {
-        try {
-            firestore.collection(COLLECTION).document(interviewId)
-                    .update("status", "ABANDONED").get();
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("Error abandoning interview {}: {}", interviewId, e.getMessage());
-        }
-    }
 }

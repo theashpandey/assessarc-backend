@@ -34,6 +34,7 @@ public class FeedbackService {
         if (rating != null && (rating < 1 || rating > 5)) {
             throw new RuntimeException("Rating must be between 1 and 5");
         }
+        String feedbackType = normalizeFeedbackType(type);
         User user = userRepository.findById(uid).orElse(null);
         Feedback fb = Feedback.builder()
                 .uid(uid)
@@ -41,12 +42,12 @@ public class FeedbackService {
                 .userName(user != null ? user.getName() : null)
                 .message(cleanedMessage)
                 .rating(rating)
-                .type(type != null ? type : "dashboard")
+                .type(feedbackType)
                 .createdAt(System.currentTimeMillis())
                 .isRead(false)
                 .build();
         feedbackRepository.save(fb);
-        log.info("Feedback saved from user {}: type={}, rating={}", uid, type, rating);
+        log.info("Feedback saved from user {}: type={}, rating={}", uid, feedbackType, rating);
     }
 
     public void saveContact(String name, String email, String message) {
@@ -77,8 +78,18 @@ public class FeedbackService {
         return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
+    private String normalizeFeedbackType(String type) {
+        if (type == null || type.isBlank()) return "general";
+        String normalized = type.trim().toLowerCase();
+        return switch (normalized) {
+            case "bug", "feature", "general", "dashboard" -> normalized;
+            default -> "general";
+        };
+    }
+
     public List<Dto.FeedbackItem> getAllFeedback() {
-        return feedbackRepository.findByTypeOrderByCreatedAtDesc("dashboard").stream()
+        return feedbackRepository.findAllOrderByCreatedAtDesc().stream()
+                .filter(f -> !"contact".equals(f.getType()))
                 .map(f -> Dto.FeedbackItem.builder()
                         .id(f.getId())
                         .userName(f.getUserName())
