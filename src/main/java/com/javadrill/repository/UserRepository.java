@@ -32,14 +32,26 @@ public class UserRepository {
 
     public Optional<User> findByReferralCode(String referralCode) {
         if (referralCode == null || referralCode.isBlank()) return Optional.empty();
+        String trimmed = referralCode.trim();
+        String normalized = trimmed.toUpperCase(Locale.ROOT);
         try {
-            var docs = firestore.collection(COLLECTION)
-                    .whereEqualTo("referralCode", referralCode.trim().toUpperCase(Locale.ROOT))
+            var query = firestore.collection(COLLECTION)
+                    .whereEqualTo("referralCode", normalized)
                     .limit(1)
-                    .get().get()
-                    .getDocuments();
-            if (docs.isEmpty()) return Optional.empty();
-            return Optional.ofNullable(docs.get(0).toObject(User.class));
+                    .get().get();
+            if (!query.getDocuments().isEmpty()) {
+                return Optional.ofNullable(query.getDocuments().get(0).toObject(User.class));
+            }
+            if (!trimmed.equals(normalized)) {
+                var legacyQuery = firestore.collection(COLLECTION)
+                        .whereEqualTo("referralCode", trimmed)
+                        .limit(1)
+                        .get().get();
+                if (!legacyQuery.getDocuments().isEmpty()) {
+                    return Optional.ofNullable(legacyQuery.getDocuments().get(0).toObject(User.class));
+                }
+            }
+            return Optional.empty();
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error fetching referral code {}: {}", referralCode, e.getMessage());
             return Optional.empty();
