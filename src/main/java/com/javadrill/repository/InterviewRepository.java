@@ -62,11 +62,19 @@ public class InterviewRepository {
         return fetchAndFilter(userId, Integer.MAX_VALUE);
     }
 
+    public List<Interview> findReportableByUserId(String userId, int limit) {
+        return fetchByStatuses(userId, Set.of("COMPLETED", "ANALYSIS_PENDING"), limit);
+    }
+
     private List<Interview> fetchAndFilter(String userId, int limit) {
+        return fetchByStatuses(userId, Set.of("COMPLETED"), limit);
+    }
+
+    private List<Interview> fetchByStatuses(String userId, Set<String> statuses, int limit) {
         try {
             Query query = firestore.collection(COLLECTION)
                     .whereEqualTo("userId", userId)
-                    .whereEqualTo("status", "COMPLETED")
+                    .whereIn("status", new ArrayList<>(statuses))
                     .orderBy("completedAt", Query.Direction.DESCENDING);
             if (limit != Integer.MAX_VALUE) {
                 query = query.limit(limit);
@@ -87,7 +95,7 @@ public class InterviewRepository {
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
-            log.debug("Returning {} completed interviews for userId={}", result.size(), userId);
+            log.debug("Returning {} reportable interviews for userId={}", result.size(), userId);
             return result;
 
         } catch (InterruptedException | ExecutionException e) {
@@ -202,18 +210,91 @@ public class InterviewRepository {
         }
     }
 
+    public int moveNextPooledQuestionToAsked(String interviewId) {
+        try {
+            var docRef = firestore.collection(COLLECTION).document(interviewId);
+            return firestore.runTransaction(tx -> {
+                var snap = tx.get(docRef).get();
+                if (!snap.exists()) throw new RuntimeException("Interview not found: " + interviewId);
+
+                Interview iv = snap.toObject(Interview.class);
+                if (iv == null) throw new RuntimeException("Interview not found: " + interviewId);
+                List<Interview.QuestionAnswer> pool = iv.getQuestionPool() != null
+                        ? new ArrayList<>(iv.getQuestionPool()) : new ArrayList<>();
+                if (pool.isEmpty()) return -1;
+
+                List<Interview.QuestionAnswer> questions = iv.getQuestions() != null
+                        ? new ArrayList<>(iv.getQuestions()) : new ArrayList<>();
+                questions.add(pool.remove(0));
+                iv.setQuestions(questions);
+                iv.setQuestionPool(pool);
+
+                tx.set(docRef, iv);
+                return questions.size() - 1;
+            }).get();
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Error moving pooled question for interview {}: {}", interviewId, e.getMessage());
+            throw new RuntimeException("Failed to prepare next question", e);
+        }
+    }
+
+    public void appendQuestionsToPool(String interviewId, List<Interview.QuestionAnswer> newQuestions) {
+        try {
+            var docRef = firestore.collection(COLLECTION).document(interviewId);
+            firestore.runTransaction(tx -> {
+                var snap = tx.get(docRef).get();
+                if (!snap.exists()) throw new RuntimeException("Interview not found: " + interviewId);
+
+                Interview iv = snap.toObject(Interview.class);
+                if (iv == null) throw new RuntimeException("Interview not found: " + interviewId);
+                List<Interview.QuestionAnswer> pool = iv.getQuestionPool() != null
+                        ? new ArrayList<>(iv.getQuestionPool()) : new ArrayList<>();
+                pool.addAll(newQuestions);
+                iv.setQuestionPool(pool);
+
+                tx.set(docRef, iv);
+                return null;
+            }).get();
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Error appending pooled questions for interview {}: {}", interviewId, e.getMessage());
+            throw new RuntimeException("Failed to prepare question pool", e);
+        }
+    }
+
     public void completeInterview(String interviewId, Interview.Scores scores, long completedAt) {
         try {
             Map<String, Object> updates = new HashMap<>();
             updates.put("status", "COMPLETED");
             updates.put("scores", scores);
             updates.put("completedAt", completedAt);
+            updates.put("questionPool", List.of());
+            updates.put("completionMessage", null);
+            updates.put("analysisRetryAfter", 0);
             firestore.collection(COLLECTION).document(interviewId).update(updates).get();
             log.info("Interview {} marked COMPLETED with score={}", interviewId,
                     scores != null ? scores.getOverall() : "?");
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error completing interview {}: {}", interviewId, e.getMessage());
             throw new RuntimeException("Failed to complete interview", e);
+        }
+    }
+
+    public void markAnalysisPending(String interviewId, List<Interview.QuestionAnswer> askedQuestions,
+                                    long completedAt, String message) {
+        try {
+            Map<String, Object> updates = new HashMap<>();
+            updates.put("status", "ANALYSIS_PENDING");
+            updates.put("questions", askedQuestions);
+            updates.put("questionPool", List.of());
+            updates.put("scores", null);
+            updates.put("completedAt", completedAt);
+            updates.put("completionMessage", message);
+            updates.put("analysisRetryAfter", System.currentTimeMillis() + 15 * 60 * 1000);
+            firestore.collection(COLLECTION).document(interviewId).update(updates).get();
+            log.info("Interview {} marked ANALYSIS_PENDING", interviewId);
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Error marking interview {} pending analysis: {}", interviewId, e.getMessage());
+            throw new RuntimeException("Failed to save interview state", e);
         }
     }
 

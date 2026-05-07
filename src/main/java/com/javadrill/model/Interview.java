@@ -19,7 +19,7 @@ import java.util.Map;
 public class Interview {
     private String id;
     private String userId;         // Firebase UID — consistent field name everywhere
-    private String status;         // STARTED | COMPLETED | ABANDONED
+    private String status;         // STARTED | COMPLETED | ANALYSIS_PENDING | ABANDONED
     private int durationMinutes;   // 30 or 60
     private String interviewRole;
     private String experienceLevel;
@@ -29,8 +29,11 @@ public class Interview {
 
     private String resumeSummary;
     private List<QuestionAnswer> questions;
+    private List<QuestionAnswer> questionPool;
     private Scores scores;
     private Analysis analysis;
+    private String completionMessage;
+    private long analysisRetryAfter;
 
     @Data
     @Builder
@@ -55,7 +58,7 @@ public class Interview {
         private int technical;
         private int communication;
         private int problemSolving;
-        private int javaDepth;
+        private int roleDepth;
         private Map<String, Integer> categories;
     }
 

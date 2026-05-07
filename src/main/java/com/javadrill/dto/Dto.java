@@ -187,6 +187,8 @@ public class Dto {
         private ScoresDto scores;
         private String interviewId;
         private long completedAt;
+        private String status;
+        private String message;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -195,7 +197,7 @@ public class Dto {
         private int technical;
         private int communication;
         private int problemSolving;
-        private int javaDepth;
+        private int roleDepth;
         private Map<String, Integer> categories;
     }
 
@@ -203,6 +205,8 @@ public class Dto {
     public static class InterviewHistoryItem {
         private String id;
         private String date;
+        private String status;
+        private String message;
         private String interviewRole;
         private String experienceLevel;
         private int durationMinutes;
@@ -215,6 +219,8 @@ public class Dto {
     public static class InterviewDetailResponse {
         private String id;
         private String date;
+        private String status;
+        private String message;
         private String interviewRole;
         private String experienceLevel;
         private int durationMinutes;
@@ -283,7 +289,6 @@ public class Dto {
         private List<GeminiUsageBucket> byUser;
         private List<GeminiUsageBucket> byInterview;
         private List<GeminiUsageBucket> byCallType;
-        private List<GeminiUsageItem> recentRequests;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -327,6 +332,9 @@ public class Dto {
         private String strengthsSummary;
         private String improvementPlan;
         private String interviewerVerdict;
+        private String skillProfileSummary;
+        private String nextInterviewGoal;
+        private List<String> practiceDrills;
         private List<CategoryInsight> categoryInsights;
         private int sessionCount;
         private int avgScore;

@@ -33,24 +33,6 @@ public class GeminiService {
     private static final DateTimeFormatter DAY_FMT = DateTimeFormatter.ISO_LOCAL_DATE.withZone(USAGE_ZONE);
     private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM").withZone(USAGE_ZONE);
 
- 
-    public Map<String, Boolean> apis = new LinkedHashMap<>(Map.of(
-            "AIzaSyA5ZSxoQwpOY1L0s9tPK7gRxJBRZbLdqv0", true,
-            "AIzaSyCRs3WXzdC_b-PKpQBAcY2nagvZ9y-1tkU", true,
-            "AIzaSyDomS7-4cwoKy3B8DX5BsofQ-w0Kybsp7A", true,
-            "AIzaSyAkAY89mhhck93wQVV27bfV_-XT8PPyGU4", true
-    ));
-    public String getActiveKey(Map<String, Boolean> apiKeys) {
-      for (Map.Entry<String, Boolean> entry : apiKeys.entrySet()) {
-          if (entry.getValue()) {
-              return entry.getKey();
-          }
-      }
-      throw new RuntimeException("No active API keys available");
-  }
-    public void markKeyInactive(Map<String, Boolean> apiKeys, String key) {
-      apiKeys.put(key, false);
-  }
     private static final List<String> COMMON_CATEGORIES = List.of("problem_solving", "behavioral");
     private static final Map<String, String> ROLE_LABELS = Map.ofEntries(
             Map.entry("software_engineer", "Software Engineer"),
@@ -224,7 +206,7 @@ public class GeminiService {
             var body = Map.of(
                     "contents", contents,
                     "generationConfig", Map.of(
-                            "maxOutputTokens", 20480,
+                            "maxOutputTokens", maxOutputTokensFor(callType),
                             "temperature", temperature,
                             "topP", 0.95,
                             "topK", 40
@@ -396,7 +378,9 @@ public class GeminiService {
                 "Already selected questions (DO NOT ask similar ones):\n- %s\n\n" +
                 "Generate exactly %d NEW, unique interview questions for this role and experience level. " +
                 "Make them conversational, natural, NOT robotic. " +
-                "Questions must be resume-based: use the candidate's real projects, tools, responsibilities, achievements, and tech stack where possible. " +
+                "Mix resume-grounded questions with realistic role fundamentals and practical scenario questions. " +
+                "Use the candidate's real projects, tools, responsibilities, achievements, and tech stack where useful, but do not ask only resume questions. " +
+                "Do NOT mention the resume or role metadata in the wording of the question. " +
                 "Vary categories across: %s\n" +
                 "Problem solving and behavioral are common for every role; other categories must match the chosen role and resume. " +
                 "Each question should sound like a real senior interviewer asking it in a live interview. Avoid textbook phrasing, list-style wording, and generic prompts.\n" +
@@ -412,7 +396,8 @@ public class GeminiService {
         try {
             String raw = callGeminiWithTemp(prompt,
                     "You are Sarah, a senior "+roleLabel+" interviewer at a top product company google. " +
-                    "Generate natural, varied, role-specific resume based interview questions that sound human and grounded in the candidate's actual background. Return only valid JSON array.",
+                    "Generate natural, varied interview questions that sound human. Blend project discussion, fundamentals, design/tradeoffs, debugging, behavior, and role-specific depth. " +
+                    "Never reveal that a question came from the resume or role metadata. Return only valid JSON array.",
                     0.9, userId, interviewId, callType);
             return safeParseJsonArray(raw);
         } catch (GeminiQuotaException | GeminiUnavailableException e) {
@@ -495,7 +480,7 @@ public class GeminiService {
           .append("technical means role-specific professional depth, not only coding.\n")
           .append("Return ONLY valid JSON (no markdown):\n")
           .append("{\"technical\":75,\"communication\":80,\"problemSolving\":70,")
-          .append("\"javaDepth\":78,\"overall\":76,")
+          .append("\"roleDepth\":78,\"overall\":76,")
           .append("\"categories\":{\"problem_solving\":72,\"behavioral\":85}}");
 
         try {
@@ -503,10 +488,10 @@ public class GeminiService {
                     "You are a strict "+role+" interview evaluator at google. Score realistically based on answer quality. " +
                     "Do not give inflated scores. Return only valid JSON.",
                     0.3, userId, interviewId, "score_calculation");
-            return safeParseJsonObject(raw);
+            return parseJsonObjectOrThrow(raw);
         } catch (GeminiQuotaException | GeminiUnavailableException e) {
-            log.warn("Gemini unavailable while scoring; using fallback scores: {}", e.getMessage());
-            return fallbackScores(allowedCategories);
+            log.warn("Gemini unavailable while scoring: {}", e.getMessage());
+            throw e;
         }
     }
 
@@ -544,8 +529,20 @@ public class GeminiService {
             return objectMapper.readValue(text, Map.class);
         } catch (Exception e) {
             log.error("Failed to parse JSON object: {}", e.getMessage());
-            return Map.of("overall", 70, "technical", 70, "communication", 70,
-                          "problemSolving", 70, "javaDepth", 70, "categories", Map.of());
+            return Map.of();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> parseJsonObjectOrThrow(String raw) {
+        try {
+            String text = cleanJson(raw);
+            int start = text.indexOf('{');
+            int end = text.lastIndexOf('}');
+            if (start >= 0 && end > start) text = text.substring(start, end + 1);
+            return objectMapper.readValue(text, Map.class);
+        } catch (Exception e) {
+            throw new GeminiUnavailableException("AI service returned an invalid response. Please try again.");
         }
     }
 
@@ -559,13 +556,23 @@ public class GeminiService {
         return status == 429;
     }
 
+    private int maxOutputTokensFor(String callType) {
+        String normalized = callType == null ? "" : callType;
+        if (normalized.contains("question_generation")) return 4096;
+        if (normalized.contains("feedback")) return 512;
+        if (normalized.contains("score")) return 1024;
+        if (normalized.contains("analysis")) return 2048;
+        if (normalized.contains("resume_parse")) return 1024;
+        return 2048;
+    }
+
     private void recordUsage(String userId, String interviewId, String callType,
                              String status, JsonNode usageMetadata, String errorMessage) {
         long now = System.currentTimeMillis();
         JsonNode usage = usageMetadata != null ? usageMetadata : objectMapper.createObjectNode();
         int inputTokens = usage.path("promptTokenCount").asInt(0);
         int outputTokens = usage.path("candidatesTokenCount").asInt(0);
-        int totalTokens = usage.path("totalTokenCount").asInt(inputTokens + outputTokens);
+        int totalTokens = inputTokens + outputTokens;
         Instant instant = Instant.ofEpochMilli(now);
 
         geminiUsageRepository.save(GeminiUsageLog.builder()
@@ -606,34 +613,17 @@ public class GeminiService {
         List<String> categories = allowedCategories == null || allowedCategories.isEmpty()
                 ? categoriesForRole(role) : allowedCategories;
         List<Map<String, String>> fallback = new ArrayList<>();
-        fallback.add(Map.of("question", "Can you walk me through one recent project or responsibility from your resume and explain your exact contribution?", "category", "behavioral", "difficulty", "medium"));
+        fallback.add(Map.of("question", "Can you walk me through a recent project or responsibility and explain your exact contribution?", "category", "behavioral", "difficulty", "medium"));
         fallback.add(Map.of("question", "How do you break down an unfamiliar problem before deciding on an implementation or process?", "category", "problem_solving", "difficulty", "medium"));
         for (String category : categories) {
             if ("behavioral".equals(category) || "problem_solving".equals(category)) continue;
             fallback.add(Map.of(
-                    "question", "For a " + roleLabel(role) + " interview, how would you demonstrate strong practical depth in " + categoryLabel(category) + " using an example from your resume?",
+                    "question", "Can you explain a practical tradeoff you have handled in " + categoryLabel(category) + " and what you would do differently now?",
                     "category", category,
                     "difficulty", "medium"
             ));
         }
         return fallback.stream().limit(Math.max(1, Math.min(count, fallback.size()))).toList();
-    }
-
-    private Map<String, Object> fallbackScores(List<String> allowedCategories) {
-        Map<String, Integer> categories = new LinkedHashMap<>();
-        List<String> cats = allowedCategories == null || allowedCategories.isEmpty()
-                ? List.of("problem_solving", "behavioral") : allowedCategories;
-        for (String category : cats) {
-            categories.put(category, 65);
-        }
-        return Map.of(
-                "overall", 65,
-                "technical", 65,
-                "communication", 65,
-                "problemSolving", 65,
-                "javaDepth", 65,
-                "categories", categories
-        );
     }
 
     @SuppressWarnings("unchecked")

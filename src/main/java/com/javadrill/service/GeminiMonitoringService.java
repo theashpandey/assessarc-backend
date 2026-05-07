@@ -8,11 +8,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.*;
 import java.time.format.DateTimeFormatter;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -42,11 +40,6 @@ public class GeminiMonitoringService {
                 .byUser(group(logs, log -> blankToUnknown(log.getUserId())))
                 .byInterview(group(logs, log -> blankToUnknown(log.getInterviewId())))
                 .byCallType(group(logs, log -> blankToUnknown(log.getCallType())))
-                .recentRequests(logs.stream()
-                        .sorted(Comparator.comparingLong(GeminiUsageLog::getCreatedAt).reversed())
-                        .limit(100)
-                        .map(this::toItem)
-                        .toList())
                 .build();
     }
 
@@ -61,6 +54,7 @@ public class GeminiMonitoringService {
                         .key(entry.getKey())
                         .totals(totals(entry.getValue()))
                         .build())
+                .sorted((a, b) -> b.getKey().compareTo(a.getKey()))
                 .toList();
     }
 
@@ -79,23 +73,6 @@ public class GeminiMonitoringService {
                 .inputTokens(inputTokens)
                 .outputTokens(outputTokens)
                 .totalTokens(totalTokens)
-                .build();
-    }
-
-    private Dto.GeminiUsageItem toItem(GeminiUsageLog log) {
-        return Dto.GeminiUsageItem.builder()
-                .id(log.getId())
-                .userId(log.getUserId())
-                .interviewId(log.getInterviewId())
-                .callType(log.getCallType())
-                .status(log.getStatus())
-                .inputTokens(log.getInputTokens())
-                .outputTokens(log.getOutputTokens())
-                .totalTokens(log.getTotalTokens())
-                .createdAt(log.getCreatedAt())
-                .day(log.getDay())
-                .month(log.getMonth())
-                .errorMessage(log.getErrorMessage())
                 .build();
     }
 
