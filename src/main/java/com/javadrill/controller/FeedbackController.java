@@ -53,17 +53,23 @@ public class FeedbackController {
      * GET /api/admin/feedback - Admin view of all feedback (secured)
      */
     @GetMapping("/admin/feedback")
-    public ResponseEntity<List<Dto.FeedbackItem>> getAllFeedback(Authentication auth) {
+    public ResponseEntity<List<Dto.FeedbackItem>> getAllFeedback(
+            Authentication auth,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to) {
         adminAuthService.requireAdmin(auth);
-        return ResponseEntity.ok(feedbackService.getAllFeedback());
+        return ResponseEntity.ok(feedbackService.getAllFeedback(from, to));
     }
 
     /**
      * GET /api/admin/contacts - Admin view of all contacts
      */
     @GetMapping("/admin/contacts")
-    public ResponseEntity<List<Dto.ContactItem>> getAllContacts(Authentication auth) {
+    public ResponseEntity<List<Dto.ContactItem>> getAllContacts(
+            Authentication auth,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to) {
         adminAuthService.requireAdmin(auth);
-        return ResponseEntity.ok(feedbackService.getAllContacts());
+        return ResponseEntity.ok(feedbackService.getAllContacts(from, to));
     }
 }

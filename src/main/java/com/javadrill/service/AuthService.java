@@ -27,14 +27,19 @@ public class AuthService {
     }
 
     public Dto.AuthResponse loginOrRegister(String uid, FirebaseToken token, String referralCode) {
+        return loginOrRegister(uid, token, referralCode, null);
+    }
+
+    public Dto.AuthResponse loginOrRegister(String uid, FirebaseToken token, String referralCode, String requestedName) {
         var existing = userRepository.findById(uid);
         boolean isNew = existing.isEmpty();
+        String resolvedName = resolveName(token, requestedName);
 
         User user;
         if (isNew) {
             user = User.builder()
                     .uid(uid)
-                    .name(token.getName() != null ? token.getName() : "User")
+                    .name(resolvedName)
                     .email(token.getEmail())
                     .photoUrl(resolvePhotoUrl(token))
                     .walletCredits(props.getWallet().getSignupBonus())
@@ -49,12 +54,21 @@ public class AuthService {
             log.info("New user registered: {} ({})", uid, token.getEmail());
         } else {
             user = existing.get();
+            boolean shouldSave = false;
+            if (requestedName != null && !requestedName.isBlank()
+                    && (user.getName() == null || user.getName().isBlank() || "User".equalsIgnoreCase(user.getName()))) {
+                user.setName(requestedName.trim());
+                shouldSave = true;
+            }
             if (user.getReferralCode() == null || user.getReferralCode().isBlank()) {
                 user.setReferralCode(generateReferralCode(uid));
-                userRepository.save(user);
+                shouldSave = true;
             }
             if (user.getPhotoUrl() == null || user.getPhotoUrl().isBlank()) {
                 user.setPhotoUrl(resolvePhotoUrl(token));
+                shouldSave = true;
+            }
+            if (shouldSave) {
                 userRepository.save(user);
             }
             userRepository.updateLastActive(uid);
@@ -112,6 +126,16 @@ public class AuthService {
             return photoUrl;
         }
         return DEFAULT_AVATAR_URL;
+    }
+
+    private String resolveName(FirebaseToken token, String requestedName) {
+        if (requestedName != null && !requestedName.isBlank()) {
+            return requestedName.trim();
+        }
+        if (token.getName() != null && !token.getName().isBlank()) {
+            return token.getName().trim();
+        }
+        return "User";
     }
 
 }

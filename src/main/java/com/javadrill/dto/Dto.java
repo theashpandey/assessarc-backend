@@ -52,6 +52,7 @@ public class Dto {
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class LoginRequest {
         private String referralCode;
+        private String name;
     }
 
     // ── Resume ──

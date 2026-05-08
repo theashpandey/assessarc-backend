@@ -35,26 +35,28 @@ public class GeminiMonitoringService {
                 .from(range.fromDate())
                 .to(range.toDateInclusive())
                 .total(totals)
-                .byDay(group(logs, GeminiUsageLog::getDay))
-                .byMonth(group(logs, GeminiUsageLog::getMonth))
-                .byUser(group(logs, log -> blankToUnknown(log.getUserId())))
-                .byInterview(group(logs, log -> blankToUnknown(log.getInterviewId())))
-                .byCallType(group(logs, log -> blankToUnknown(log.getCallType())))
+                .byDay(group(logs, GeminiUsageLog::getDay, false))
+                .byMonth(group(logs, GeminiUsageLog::getMonth, false))
+                .byUser(group(logs, log -> blankToUnknown(log.getUserId()), true))
+                .byInterview(group(logs, log -> blankToUnknown(log.getInterviewId()), true))
+                .byCallType(group(logs, log -> blankToUnknown(log.getCallType()), true))
                 .build();
     }
 
-    private List<Dto.GeminiUsageBucket> group(List<GeminiUsageLog> logs, KeyExtractor extractor) {
+    private List<Dto.GeminiUsageBucket> group(List<GeminiUsageLog> logs, KeyExtractor extractor, boolean sortByRequests) {
         Map<String, List<GeminiUsageLog>> grouped = new LinkedHashMap<>();
         for (GeminiUsageLog log : logs) {
             String key = blankToUnknown(extractor.key(log));
             grouped.computeIfAbsent(key, ignored -> new java.util.ArrayList<>()).add(log);
         }
-        return grouped.entrySet().stream()
+        var stream = grouped.entrySet().stream()
                 .map(entry -> Dto.GeminiUsageBucket.builder()
                         .key(entry.getKey())
                         .totals(totals(entry.getValue()))
-                        .build())
-                .sorted((a, b) -> b.getKey().compareTo(a.getKey()))
+                        .build());
+        return (sortByRequests
+                ? stream.sorted((a, b) -> Integer.compare(b.getTotals().getRequestCount(), a.getTotals().getRequestCount()))
+                : stream.sorted((a, b) -> b.getKey().compareTo(a.getKey())))
                 .toList();
     }
 

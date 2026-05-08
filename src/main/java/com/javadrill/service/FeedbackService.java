@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -28,6 +29,8 @@ public class FeedbackService {
 
     private static final DateTimeFormatter FMT =
             DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a").withZone(ZoneId.of("Asia/Kolkata"));
+    private static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
+    private static final DateTimeFormatter DAY_FMT = DateTimeFormatter.ISO_LOCAL_DATE;
 
     public void saveFeedback(String uid, String message, Integer rating, String type) {
         String cleanedMessage = cleanMessage(message);
@@ -88,8 +91,14 @@ public class FeedbackService {
     }
 
     public List<Dto.FeedbackItem> getAllFeedback() {
+        return getAllFeedback(null, null);
+    }
+
+    public List<Dto.FeedbackItem> getAllFeedback(String from, String to) {
+        TimeRange range = resolveRange(from, to);
         return feedbackRepository.findAllOrderByCreatedAtDesc().stream()
                 .filter(f -> !"contact".equals(f.getType()))
+                .filter(f -> inRange(f.getCreatedAt(), range))
                 .map(f -> Dto.FeedbackItem.builder()
                         .id(f.getId())
                         .userName(f.getUserName())
@@ -103,7 +112,14 @@ public class FeedbackService {
     }
 
     public List<Dto.ContactItem> getAllContacts() {
-        return feedbackRepository.findByTypeOrderByCreatedAtDesc("contact").stream()
+        return getAllContacts(null, null);
+    }
+
+    public List<Dto.ContactItem> getAllContacts(String from, String to) {
+        TimeRange range = resolveRange(from, to);
+        return feedbackRepository.findAllOrderByCreatedAtDesc().stream()
+                .filter(f -> "contact".equals(f.getType()))
+                .filter(f -> inRange(f.getCreatedAt(), range))
                 .map(f -> Dto.ContactItem.builder()
                         .id(f.getId())
                         .name(f.getUserName())
@@ -113,4 +129,23 @@ public class FeedbackService {
                         .build())
                 .collect(Collectors.toList());
     }
+
+    private TimeRange resolveRange(String from, String to) {
+        LocalDate fromDate = from == null || from.isBlank()
+                ? LocalDate.now(ZONE).minusYears(1)
+                : LocalDate.parse(from, DAY_FMT);
+        LocalDate toDate = to == null || to.isBlank()
+                ? LocalDate.now(ZONE)
+                : LocalDate.parse(to, DAY_FMT);
+        return new TimeRange(
+                fromDate.atStartOfDay(ZONE).toInstant().toEpochMilli(),
+                toDate.plusDays(1).atStartOfDay(ZONE).toInstant().toEpochMilli()
+        );
+    }
+
+    private boolean inRange(long millis, TimeRange range) {
+        return millis >= range.fromMillis() && millis < range.toMillis();
+    }
+
+    private record TimeRange(long fromMillis, long toMillis) {}
 }

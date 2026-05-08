@@ -38,7 +38,8 @@ public class AuthController {
             }
             FirebaseToken decoded = FirebaseAuth.getInstance().verifyIdToken(idToken);
             var response = authService.loginOrRegister(decoded.getUid(), decoded,
-                    req != null ? req.getReferralCode() : null);
+                    req != null ? req.getReferralCode() : null,
+                    req != null ? req.getName() : null);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Login failed: {}", e.getMessage());
