@@ -16,6 +16,8 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class AuthService {
 
+    private static final String DEFAULT_AVATAR_URL = "/default-avatar.svg";
+
     private final UserRepository userRepository;
     private final AppProperties props;
 
@@ -33,7 +35,7 @@ public class AuthService {
                     .uid(uid)
                     .name(token.getName() != null ? token.getName() : "User")
                     .email(token.getEmail())
-                    .photoUrl((String) token.getClaims().get("picture"))
+                    .photoUrl(resolvePhotoUrl(token))
                     .walletCredits(props.getWallet().getSignupBonus())
                     .createdAt(System.currentTimeMillis())
                     .lastActiveAt(System.currentTimeMillis())
@@ -48,6 +50,10 @@ public class AuthService {
             user = existing.get();
             if (user.getReferralCode() == null || user.getReferralCode().isBlank()) {
                 user.setReferralCode(generateReferralCode(uid));
+                userRepository.save(user);
+            }
+            if (user.getPhotoUrl() == null || user.getPhotoUrl().isBlank()) {
+                user.setPhotoUrl(resolvePhotoUrl(token));
                 userRepository.save(user);
             }
             userRepository.updateLastActive(uid);
@@ -95,6 +101,14 @@ public class AuthService {
     private String generateReferralCode(String uid) {
         String clean = uid.replaceAll("[^A-Za-z0-9]", "");
         return ("JD" + clean.substring(0, Math.min(8, clean.length()))).toUpperCase(Locale.ROOT);
+    }
+
+    private String resolvePhotoUrl(FirebaseToken token) {
+        Object picture = token.getClaims().get("picture");
+        if (picture instanceof String photoUrl && !photoUrl.isBlank()) {
+            return photoUrl;
+        }
+        return DEFAULT_AVATAR_URL;
     }
 
 }
