@@ -21,7 +21,7 @@ public class AdminMonitoringController {
     private final AdminAuthService adminAuthService;
     private final AdminAnalyticsService adminAnalyticsService;
 
-    @GetMapping("/users/analytics")
+    @GetMapping({"/users/analytics", "/dashboard"})
     public ResponseEntity<Dto.AdminUserAnalyticsResponse> getUserAnalytics(
             Authentication auth,
             @RequestParam(required = false) String from,
