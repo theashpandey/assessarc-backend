@@ -1,6 +1,8 @@
 package com.javadrill.repository;
 
 import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.Query;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.javadrill.model.User;
 import com.javadrill.model.WalletTransaction;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,29 @@ public class UserRepository {
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error fetching user {}: {}", uid, e.getMessage());
             return Optional.empty();
+        }
+    }
+
+    public List<User> findAll() {
+        try {
+            List<QueryDocumentSnapshot> docs = firestore.collection(COLLECTION)
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .get().get().getDocuments();
+            return docs.stream()
+                    .map(doc -> {
+                        User user = doc.toObject(User.class);
+                        if (user != null && (user.getUid() == null || user.getUid().isBlank())) {
+                            user.setUid(doc.getId());
+                        }
+                        return user;
+                    })
+                    .filter(Objects::nonNull)
+                    .toList();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Failed to fetch users", e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Failed to fetch users", e);
         }
     }
 

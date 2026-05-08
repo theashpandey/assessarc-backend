@@ -1,6 +1,7 @@
 package com.javadrill.controller;
 
 import com.javadrill.dto.Dto;
+import com.javadrill.service.AdminAnalyticsService;
 import com.javadrill.service.AdminAuthService;
 import com.javadrill.service.GeminiMonitoringService;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,16 @@ public class AdminMonitoringController {
 
     private final GeminiMonitoringService geminiMonitoringService;
     private final AdminAuthService adminAuthService;
+    private final AdminAnalyticsService adminAnalyticsService;
+
+    @GetMapping("/users/analytics")
+    public ResponseEntity<Dto.AdminUserAnalyticsResponse> getUserAnalytics(
+            Authentication auth,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to) {
+        adminAuthService.requireAdmin(auth);
+        return ResponseEntity.ok(adminAnalyticsService.getUserAnalytics(from, to));
+    }
 
     @GetMapping("/gemini/usage")
     public ResponseEntity<Dto.GeminiUsageReport> getGeminiUsage(

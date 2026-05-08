@@ -20,6 +20,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final AppProperties props;
+    private final AdminAuthService adminAuthService;
 
     public Dto.AuthResponse loginOrRegister(String uid, FirebaseToken token) {
         return loginOrRegister(uid, token, null);
@@ -72,6 +73,7 @@ public class AuthService {
                 .totalInterviews(user.getTotalInterviews())
                 .avgScore(user.getAvgScore())
                 .referralCode(user.getReferralCode())
+                .isAdmin(adminAuthService.isAdmin(user.getUid(), user.getEmail()))
                 .build();
     }
 
@@ -95,6 +97,7 @@ public class AuthService {
                 .bestScore(user.getBestScore())
                 .referralCode(user.getReferralCode())
                 .referredBy(user.getReferredBy())
+                .isAdmin(adminAuthService.isAdmin(user.getUid(), user.getEmail()))
                 .build();
     }
 

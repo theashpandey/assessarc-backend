@@ -38,6 +38,16 @@ public class AdminAuthService {
         }
     }
 
+    public boolean isAdmin(String uid, String email) {
+        Set<String> allowedUids = splitCsv(props.getAdmin().getAllowedUids());
+        Set<String> allowedEmails = splitCsv(props.getAdmin().getAllowedEmails()).stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        String normalizedEmail = email == null ? "" : email.toLowerCase(Locale.ROOT);
+        return (uid != null && allowedUids.contains(uid))
+                || (!normalizedEmail.isBlank() && allowedEmails.contains(normalizedEmail));
+    }
+
     private Set<String> splitCsv(String value) {
         if (value == null || value.isBlank()) return Set.of();
         return Stream.of(value.split(","))

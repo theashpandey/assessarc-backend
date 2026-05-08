@@ -25,6 +25,7 @@ public class Dto {
         private int totalInterviews;
         private double avgScore;
         private String referralCode;
+        private boolean isAdmin;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -45,6 +46,7 @@ public class Dto {
         private int bestScore;
         private String referralCode;
         private String referredBy;
+        private boolean isAdmin;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -321,6 +323,58 @@ public class Dto {
         private String day;
         private String month;
         private String errorMessage;
+    }
+
+    // Admin Dashboard
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class AdminUserAnalyticsResponse {
+        private String from;
+        private String to;
+        private AdminUserStats stats;
+        private List<AdminMetricBucket> usersByDay;
+        private List<AdminMetricBucket> interviewsByDay;
+        private List<AdminMetricBucket> interviewsByStatus;
+        private List<AdminMetricBucket> usersByExperienceLevel;
+        private List<AdminMetricBucket> interviewsByRole;
+        private List<AdminUserItem> recentUsers;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class AdminUserStats {
+        private int totalUsers;
+        private int usersInRange;
+        private int newUsersToday;
+        private int dailyActiveUsers;
+        private int activeUsersInRange;
+        private int usersWithResume;
+        private int totalInterviews;
+        private int interviewsInRange;
+        private int interviewsToday;
+        private int completedInterviews;
+        private int pendingInterviews;
+        private int startedInterviews;
+        private int totalCreditsInWallets;
+        private int avgScore;
+        private int bestScore;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class AdminMetricBucket {
+        private String key;
+        private int count;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class AdminUserItem {
+        private String uid;
+        private String name;
+        private String email;
+        private int walletCredits;
+        private boolean hasResume;
+        private int totalInterviews;
+        private double avgScore;
+        private String createdAt;
+        private String lastActiveAt;
     }
 
     // ── Performance Analysis ──

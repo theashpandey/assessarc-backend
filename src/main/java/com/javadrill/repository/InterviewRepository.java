@@ -54,6 +54,27 @@ public class InterviewRepository {
         }
     }
 
+    public List<Interview> findAll() {
+        try {
+            List<QueryDocumentSnapshot> docs = firestore.collection(COLLECTION)
+                    .orderBy("startedAt", Query.Direction.DESCENDING)
+                    .get().get().getDocuments();
+            return docs.stream()
+                    .map(d -> {
+                        Interview iv = d.toObject(Interview.class);
+                        if (iv != null) iv.setId(d.getId());
+                        return iv;
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Failed to fetch interviews", e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Failed to fetch interviews", e);
+        }
+    }
+
     public List<Interview> findByUserId(String userId, int limit) {
         return fetchAndFilter(userId, limit);
     }
