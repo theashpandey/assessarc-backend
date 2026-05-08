@@ -147,26 +147,45 @@ public class InterviewRepository {
                 }
 
                 User user = userSnap.toObject(User.class);
-                int balanceBefore = user != null ? user.getWalletCredits() : 0;
+                int purchasedBefore = user != null ? Math.max(0, user.getPurchasedCredits()) : 0;
+                int bonusBefore = user != null ? Math.max(0, user.getBonusCredits()) : 0;
+                if (purchasedBefore == 0 && bonusBefore == 0 && user != null && user.getWalletCredits() > 0) {
+                    purchasedBefore = user.getWalletCredits();
+                }
+                int balanceBefore = purchasedBefore + bonusBefore;
                 if (balanceBefore < price) {
                     throw new RuntimeException("Insufficient credits. Need " + price
                             + " credits, you have " + balanceBefore + ".");
                 }
 
-                int balanceAfter = balanceBefore - price;
+                int purchasedDebit = Math.min(purchasedBefore, price);
+                int remaining = price - purchasedDebit;
+                int bonusDebit = Math.min(bonusBefore, remaining);
+                int purchasedAfter = purchasedBefore - purchasedDebit;
+                int bonusAfter = bonusBefore - bonusDebit;
+                int balanceAfter = purchasedAfter + bonusAfter;
                 WalletTransaction walletTx = WalletTransaction.builder()
                         .id(txId)
                         .uid(uid)
-                        .type("debit")
+                        .type("INTERVIEW_DEBIT")
                         .amount(price)
                         .balanceBefore(balanceBefore)
                         .balanceAfter(balanceAfter)
+                        .purchasedBefore(purchasedBefore)
+                        .purchasedAfter(purchasedAfter)
+                        .bonusBefore(bonusBefore)
+                        .bonusAfter(bonusAfter)
+                        .purchasedDelta(-purchasedDebit)
+                        .bonusDelta(-bonusDebit)
                         .description(interview.getDurationMinutes() + " min interview session")
                         .interviewId(interview.getId())
                         .createdAt(now)
                         .build();
 
-                transaction.update(userRef, "walletCredits", balanceAfter);
+                transaction.update(userRef,
+                        "purchasedCredits", purchasedAfter,
+                        "bonusCredits", bonusAfter,
+                        "walletCredits", balanceAfter);
                 transaction.set(interviewRef, interview);
                 transaction.set(txRef, walletTx);
                 return balanceAfter;

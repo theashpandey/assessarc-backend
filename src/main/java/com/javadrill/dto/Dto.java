@@ -18,6 +18,8 @@ public class Dto {
         private String email;
         private String photoUrl;
         private int walletCredits;
+        private int purchasedCredits;
+        private int bonusCredits;
         private boolean hasResume;
         private String interviewRole;
         private String experienceLevel;
@@ -35,6 +37,8 @@ public class Dto {
         private String email;
         private String photoUrl;
         private int walletCredits;
+        private int purchasedCredits;
+        private int bonusCredits;
         private boolean hasResume;
         private String resumeFileName;
         private long resumeUploadedAt;
@@ -84,6 +88,11 @@ public class Dto {
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class WalletBalanceResponse {
         private int credits;
+        private int purchasedCredits;
+        private int bonusCredits;
+        private int totalCredits;
+        private int redeemableBalance;
+        private String upiId;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -93,16 +102,23 @@ public class Dto {
         private int amount;
         private int balanceBefore;
         private int balanceAfter;
+        private int purchasedBefore;
+        private int purchasedAfter;
+        private int bonusBefore;
+        private int bonusAfter;
+        private int purchasedDelta;
+        private int bonusDelta;
         private String description;
         private String razorpayOrderId;
         private String razorpayPaymentId;
         private String interviewId;
+        private String redeemRequestId;
         private long createdAt;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class CreateOrderRequest {
-        private int creditPack; // 10 | 25 | 50 | 100
+        private int creditPack; // total credits in selected plan
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -125,7 +141,51 @@ public class Dto {
     public static class VerifyPaymentResponse {
         private boolean success;
         private int newBalance;
+        private int purchasedCredits;
+        private int bonusCredits;
         private String message;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class SaveUpiRequest {
+        private String upiId;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class RedeemRequestDto {
+        private int amount;
+        private String upiId;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class RedeemResponse {
+        private boolean success;
+        private String requestId;
+        private String status;
+        private int purchasedCredits;
+        private int bonusCredits;
+        private int totalCredits;
+        private String message;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class RedeemRequestItem {
+        private String id;
+        private String uid;
+        private String userEmail;
+        private String upiId;
+        private int amount;
+        private String status;
+        private String payoutId;
+        private String adminNote;
+        private long createdAt;
+        private long updatedAt;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class AdminRedeemActionRequest {
+        private String adminNote;
+        private String payoutId;
     }
 
     // ── Interview ──

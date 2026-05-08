@@ -57,6 +57,22 @@ public class WalletAndResumeController {
                 (String) auth.getPrincipal(), req));
     }
 
+    /** POST /api/wallet/upi — Save UPI ID */
+    @PostMapping("/api/wallet/upi")
+    public ResponseEntity<Dto.WalletBalanceResponse> saveUpi(
+            Authentication auth,
+            @RequestBody Dto.SaveUpiRequest req) {
+        return ResponseEntity.ok(walletService.saveUpi((String) auth.getPrincipal(), req));
+    }
+
+    /** POST /api/wallet/redeem — Create redeem request */
+    @PostMapping("/api/wallet/redeem")
+    public ResponseEntity<Dto.RedeemResponse> redeem(
+            Authentication auth,
+            @RequestBody Dto.RedeemRequestDto req) {
+        return ResponseEntity.ok(walletService.createRedeemRequest((String) auth.getPrincipal(), req));
+    }
+
     // ── RESUME ──
 
     /** POST /api/resume/upload — Upload PDF or TXT resume */

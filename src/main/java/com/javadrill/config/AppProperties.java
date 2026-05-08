@@ -31,6 +31,7 @@ public class AppProperties {
     public static class Razorpay {
         private String keyId;
         private String keySecret;
+        private String accountNumber;
     }
 
     @Data

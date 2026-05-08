@@ -37,12 +37,15 @@ public class AuthService {
 
         User user;
         if (isNew) {
+            int signupBonus = Math.max(0, props.getWallet().getSignupBonus());
             user = User.builder()
                     .uid(uid)
                     .name(resolvedName)
-                    .email(token.getEmail())
+                    .email(token.getEmail() != null ? token.getEmail().trim().toLowerCase(Locale.ROOT) : null)
                     .photoUrl(resolvePhotoUrl(token))
-                    .walletCredits(props.getWallet().getSignupBonus())
+                    .walletCredits(signupBonus)
+                    .purchasedCredits(0)
+                    .bonusCredits(signupBonus)
                     .createdAt(System.currentTimeMillis())
                     .lastActiveAt(System.currentTimeMillis())
                     .totalInterviews(0)
@@ -55,6 +58,16 @@ public class AuthService {
         } else {
             user = existing.get();
             boolean shouldSave = false;
+            int total = normalizedTotalCredits(user);
+            if (user.getPurchasedCredits() == 0 && user.getBonusCredits() == 0 && user.getWalletCredits() > 0) {
+                user.setPurchasedCredits(user.getWalletCredits());
+                user.setBonusCredits(0);
+                shouldSave = true;
+            }
+            if (user.getWalletCredits() != total) {
+                user.setWalletCredits(total);
+                shouldSave = true;
+            }
             if (requestedName != null && !requestedName.isBlank()
                     && (user.getName() == null || user.getName().isBlank() || "User".equalsIgnoreCase(user.getName()))) {
                 user.setName(requestedName.trim());
@@ -79,7 +92,9 @@ public class AuthService {
                 .name(user.getName())
                 .email(user.getEmail())
                 .photoUrl(user.getPhotoUrl())
-                .walletCredits(user.getWalletCredits())
+                .walletCredits(normalizedTotalCredits(user))
+                .purchasedCredits(normalizedPurchasedCredits(user))
+                .bonusCredits(Math.max(0, user.getBonusCredits()))
                 .hasResume(user.getResumeText() != null && !user.getResumeText().isBlank())
                 .interviewRole(user.getInterviewRole())
                 .experienceLevel(user.getExperienceLevel())
@@ -99,7 +114,9 @@ public class AuthService {
                 .name(user.getName())
                 .email(user.getEmail())
                 .photoUrl(user.getPhotoUrl())
-                .walletCredits(user.getWalletCredits())
+                .walletCredits(normalizedTotalCredits(user))
+                .purchasedCredits(normalizedPurchasedCredits(user))
+                .bonusCredits(Math.max(0, user.getBonusCredits()))
                 .hasResume(user.getResumeText() != null && !user.getResumeText().isBlank())
                 .resumeFileName(user.getResumeFileName())
                 .resumeUploadedAt(user.getResumeUploadedAt())
@@ -136,6 +153,18 @@ public class AuthService {
             return token.getName().trim();
         }
         return "User";
+    }
+
+    private int normalizedPurchasedCredits(User user) {
+        if (user == null) return 0;
+        if (user.getPurchasedCredits() == 0 && user.getBonusCredits() == 0 && user.getWalletCredits() > 0) {
+            return user.getWalletCredits();
+        }
+        return Math.max(0, user.getPurchasedCredits());
+    }
+
+    private int normalizedTotalCredits(User user) {
+        return normalizedPurchasedCredits(user) + Math.max(0, user != null ? user.getBonusCredits() : 0);
     }
 
 }

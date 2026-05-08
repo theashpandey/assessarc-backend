@@ -4,13 +4,13 @@ import com.javadrill.dto.Dto;
 import com.javadrill.service.AdminAnalyticsService;
 import com.javadrill.service.AdminAuthService;
 import com.javadrill.service.GeminiMonitoringService;
+import com.javadrill.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -20,6 +20,7 @@ public class AdminMonitoringController {
     private final GeminiMonitoringService geminiMonitoringService;
     private final AdminAuthService adminAuthService;
     private final AdminAnalyticsService adminAnalyticsService;
+    private final WalletService walletService;
 
     @GetMapping({"/users/analytics", "/dashboard"})
     public ResponseEntity<Dto.AdminUserAnalyticsResponse> getUserAnalytics(
@@ -40,5 +41,38 @@ public class AdminMonitoringController {
             @RequestParam(required = false) String interviewId) {
         adminAuthService.requireAdmin(auth);
         return ResponseEntity.ok(geminiMonitoringService.getReport(from, to, month, userId, interviewId));
+    }
+
+    @GetMapping("/redeems")
+    public ResponseEntity<List<Dto.RedeemRequestItem>> getRedeemRequests(Authentication auth) {
+        adminAuthService.requireAdmin(auth);
+        return ResponseEntity.ok(walletService.listRedeemRequests());
+    }
+
+    @PostMapping("/redeems/{id}/approve")
+    public ResponseEntity<Dto.RedeemRequestItem> approveRedeem(
+            Authentication auth,
+            @PathVariable String id,
+            @RequestBody(required = false) Dto.AdminRedeemActionRequest req) {
+        adminAuthService.requireAdmin(auth);
+        return ResponseEntity.ok(walletService.approveRedeem(id, req));
+    }
+
+    @PostMapping("/redeems/{id}/reject")
+    public ResponseEntity<Dto.RedeemRequestItem> rejectRedeem(
+            Authentication auth,
+            @PathVariable String id,
+            @RequestBody(required = false) Dto.AdminRedeemActionRequest req) {
+        adminAuthService.requireAdmin(auth);
+        return ResponseEntity.ok(walletService.rejectRedeem(id, req));
+    }
+
+    @PostMapping("/redeems/{id}/done")
+    public ResponseEntity<Dto.RedeemRequestItem> markRedeemDone(
+            Authentication auth,
+            @PathVariable String id,
+            @RequestBody(required = false) Dto.AdminRedeemActionRequest req) {
+        adminAuthService.requireAdmin(auth);
+        return ResponseEntity.ok(walletService.markRedeemDone(id, req));
     }
 }

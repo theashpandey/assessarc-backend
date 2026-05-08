@@ -74,9 +74,10 @@ public class InterviewService {
         int price = durationMinutes == 30
                 ? props.getWallet().getPrice30min()
                 : props.getWallet().getPrice60min();
-        if (user.getWalletCredits() < price) {
+        int availableCredits = totalCredits(user);
+        if (availableCredits < price) {
             throw new RuntimeException("Insufficient credits. Need " + price
-                    + " credits, you have " + user.getWalletCredits() + ".");
+                    + " credits, you have " + availableCredits + ".");
         }
 
         // Deduct wallet first (reserve credits)
@@ -639,6 +640,16 @@ public class InterviewService {
         if (val == null) return fallback;
         try { return ((Number) val).intValue(); }
         catch (Exception e) { return fallback; }
+    }
+
+    private int totalCredits(User user) {
+        if (user == null) return 0;
+        int purchased = Math.max(0, user.getPurchasedCredits());
+        int bonus = Math.max(0, user.getBonusCredits());
+        if (purchased == 0 && bonus == 0 && user.getWalletCredits() > 0) {
+            return user.getWalletCredits();
+        }
+        return purchased + bonus;
     }
 
     @SuppressWarnings("unchecked")

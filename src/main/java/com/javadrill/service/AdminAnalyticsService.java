@@ -75,7 +75,7 @@ public class AdminAnalyticsService {
                 .completedInterviews((int) interviews.stream().filter(interview -> "COMPLETED".equals(status(interview))).count())
                 .pendingInterviews((int) interviews.stream().filter(interview -> "ANALYSIS_PENDING".equals(status(interview))).count())
                 .startedInterviews((int) interviews.stream().filter(interview -> "STARTED".equals(status(interview))).count())
-                .totalCreditsInWallets(users.stream().mapToInt(User::getWalletCredits).sum())
+                .totalCreditsInWallets(users.stream().mapToInt(this::totalCredits).sum())
                 .avgScore(avgScore)
                 .bestScore(bestScore)
                 .build();
@@ -131,7 +131,7 @@ public class AdminAnalyticsService {
                 .uid(user.getUid())
                 .name(user.getName())
                 .email(user.getEmail())
-                .walletCredits(user.getWalletCredits())
+                .walletCredits(totalCredits(user))
                 .hasResume(hasText(user.getResumeText()))
                 .totalInterviews(user.getTotalInterviews())
                 .avgScore(user.getAvgScore())
@@ -181,6 +181,15 @@ public class AdminAnalyticsService {
 
     private String formatMillis(long millis) {
         return millis > 0 ? DISPLAY_FMT.format(Instant.ofEpochMilli(millis)) : "";
+    }
+
+    private int totalCredits(User user) {
+        int purchased = Math.max(0, user.getPurchasedCredits());
+        int bonus = Math.max(0, user.getBonusCredits());
+        if (purchased == 0 && bonus == 0 && user.getWalletCredits() > 0) {
+            return user.getWalletCredits();
+        }
+        return purchased + bonus;
     }
 
     private record Range(LocalDate fromDate, LocalDate toDateInclusive, long fromMillis, long toMillis) {}

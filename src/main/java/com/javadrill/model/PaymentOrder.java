@@ -17,6 +17,8 @@ public class PaymentOrder {
     private String orderId;
     private String uid;
     private int creditPack;
+    private int purchasedCredits;
+    private int bonusCredits;
     private int amountPaise;
     private String currency;
     private String receipt;

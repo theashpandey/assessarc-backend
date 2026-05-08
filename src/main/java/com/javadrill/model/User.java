@@ -19,6 +19,9 @@ public class User {
     private String email;
     private String photoUrl;
     private int walletCredits;
+    private int purchasedCredits;
+    private int bonusCredits;
+    private String upiId;
     private long createdAt;
     private long lastActiveAt;
 

@@ -83,6 +83,27 @@ public class UserRepository {
         }
     }
 
+    public Optional<User> findByEmail(String email) {
+        if (email == null || email.isBlank()) return Optional.empty();
+        try {
+            var query = firestore.collection(COLLECTION)
+                    .whereEqualTo("email", email.trim().toLowerCase(Locale.ROOT))
+                    .limit(1)
+                    .get().get();
+            if (!query.getDocuments().isEmpty()) {
+                User user = query.getDocuments().get(0).toObject(User.class);
+                if (user != null && (user.getUid() == null || user.getUid().isBlank())) {
+                    user.setUid(query.getDocuments().get(0).getId());
+                }
+                return Optional.ofNullable(user);
+            }
+            return Optional.empty();
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Error fetching user by email {}: {}", email, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
     public User save(User user) {
         try {
             firestore.collection(COLLECTION).document(user.getUid()).set(user).get();
@@ -119,26 +140,63 @@ public class UserRepository {
 
                     if (referrerSnap.exists() && !rewardTxSnap.exists()) {
                         User currentReferrer = referrerSnap.toObject(User.class);
-                        int before = currentReferrer != null ? currentReferrer.getWalletCredits() : 0;
+                        int purchasedBefore = currentReferrer != null ? currentReferrer.getPurchasedCredits() : 0;
+                        int bonusBefore = currentReferrer != null ? currentReferrer.getBonusCredits() : 0;
+                        if (purchasedBefore == 0 && bonusBefore == 0 && currentReferrer != null && currentReferrer.getWalletCredits() > 0) {
+                            purchasedBefore = currentReferrer.getWalletCredits();
+                        }
+                        int before = purchasedBefore + bonusBefore;
+                        int bonusAfter = bonusBefore + rewardCredits;
                         int after = before + rewardCredits;
                         WalletTransaction rewardTx = WalletTransaction.builder()
                                 .id(rewardTxRef.getId())
                                 .uid(finalReferrer.getUid())
-                                .type("credit")
+                                .type("REFERRAL_BONUS")
                                 .amount(rewardCredits)
                                 .balanceBefore(before)
                                 .balanceAfter(after)
+                                .purchasedBefore(purchasedBefore)
+                                .purchasedAfter(purchasedBefore)
+                                .bonusBefore(bonusBefore)
+                                .bonusAfter(bonusAfter)
+                                .bonusDelta(rewardCredits)
                                 .description("Referral reward for inviting " + newUser.getEmail())
                                 .createdAt(System.currentTimeMillis())
                                 .build();
 
                         newUser.setReferredBy(finalReferrer.getReferralCode());
-                        transaction.update(referrerRef, "walletCredits", after);
+                        transaction.update(referrerRef,
+                                "walletCredits", after,
+                                "purchasedCredits", purchasedBefore,
+                                "bonusCredits", bonusAfter);
                         transaction.set(rewardTxRef, rewardTx);
                     }
                 }
 
+                if (newUser.getWalletCredits() > 0 && newUser.getPurchasedCredits() == 0 && newUser.getBonusCredits() == 0) {
+                    newUser.setBonusCredits(newUser.getWalletCredits());
+                }
                 transaction.set(newUserRef, newUser);
+                if (newUser.getBonusCredits() > 0) {
+                    var signupTxRef = firestore.collection(WALLET_TRANSACTIONS_COLLECTION)
+                            .document("first_login_" + newUser.getUid());
+                    WalletTransaction signupTx = WalletTransaction.builder()
+                            .id(signupTxRef.getId())
+                            .uid(newUser.getUid())
+                            .type("FIRST_LOGIN_BONUS")
+                            .amount(newUser.getBonusCredits())
+                            .balanceBefore(0)
+                            .balanceAfter(newUser.getPurchasedCredits() + newUser.getBonusCredits())
+                            .purchasedBefore(0)
+                            .purchasedAfter(newUser.getPurchasedCredits())
+                            .bonusBefore(0)
+                            .bonusAfter(newUser.getBonusCredits())
+                            .bonusDelta(newUser.getBonusCredits())
+                            .description("First time login reward")
+                            .createdAt(System.currentTimeMillis())
+                            .build();
+                    transaction.set(signupTxRef, signupTx);
+                }
                 return newUser;
             }).get();
         } catch (InterruptedException | ExecutionException e) {
