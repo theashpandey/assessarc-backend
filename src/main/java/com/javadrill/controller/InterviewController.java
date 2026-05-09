@@ -43,6 +43,19 @@ public class InterviewController {
         return ResponseEntity.ok(interviewService.submitAnswer(uid, req));
     }
 
+    @PostMapping("/submit-coding")
+    public ResponseEntity<Dto.SubmitCodingAnswerResponse> submitCoding(
+            Authentication auth,
+            @RequestBody Dto.SubmitCodingAnswerRequest req) {
+        if (req == null || req.getInterviewId() == null || req.getInterviewId().isBlank()) {
+            throw new RuntimeException("Interview ID is required");
+        }
+        String uid = (String) auth.getPrincipal();
+        log.info("SUBMIT coding answer uid={} interviewId={} qIndex={}",
+                uid, req.getInterviewId(), req.getQuestionIndex());
+        return ResponseEntity.ok(interviewService.submitCodingAnswer(uid, req));
+    }
+
     @PostMapping("/next-question")
     public ResponseEntity<Dto.NextQuestionResponse> nextQuestion(
             Authentication auth,

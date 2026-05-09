@@ -130,6 +130,12 @@ public class GeminiService {
         return FRESHER_LEVELS.contains(normalizeExperience(experienceLevel));
     }
 
+    public boolean roleRequiresCoding(String role) {
+        String normalized = normalizeRole(role);
+        return Set.of("java_developer", "python_developer", "react_developer", "full_stack_developer",
+                     "backend_engineer", "frontend_engineer", "software_engineer").contains(normalized);
+    }
+
     public List<String> categoriesForRole(String role) {
         LinkedHashSet<String> categories = new LinkedHashSet<>(COMMON_CATEGORIES);
         categories.addAll(ROLE_CATEGORIES.getOrDefault(normalizeRole(role), ROLE_CATEGORIES.get(DEFAULT_ROLE)));
@@ -339,7 +345,7 @@ public class GeminiService {
   }
     // ── Question Generation ──
 
-    public List<Map<String, String>> generateQuestions(String resumeSummary,
+    public List<Map<String, Object>> generateQuestions(String resumeSummary,
                                                         List<String> existingTexts,
                                                         int count,
                                                         String role,
@@ -349,7 +355,7 @@ public class GeminiService {
                 allowedCategories, null, null, "question_generation");
     }
 
-    public List<Map<String, String>> generateQuestions(String resumeSummary,
+    public List<Map<String, Object>> generateQuestions(String resumeSummary,
                                                         List<String> existingTexts,
                                                         int count,
                                                         String role,
@@ -358,11 +364,40 @@ public class GeminiService {
                                                         String userId,
                                                         String interviewId,
                                                         String callType) {
+        return generateQuestions(resumeSummary, existingTexts, count, role, experienceLevel,
+                allowedCategories, 30, userId, interviewId, callType); // default 30 min
+    }
+
+    public List<Map<String, Object>> generateQuestions(String resumeSummary,
+                                                        List<String> existingTexts,
+                                                        int count,
+                                                        String role,
+                                                        String experienceLevel,
+                                                        List<String> allowedCategories,
+                                                        int durationMinutes,
+                                                        String userId,
+                                                        String interviewId,
+                                                        String callType) {
         boolean fresher = isFresher(experienceLevel);
         String existing = existingTexts.isEmpty() ? "none" : String.join("\n- ", existingTexts);
         String allowed = String.join(", ", allowedCategories);
         String roleLabel = roleLabel(role);
         String expLabel = experienceLabel(experienceLevel);
+
+        // Determine coding questions
+        boolean hasCoding = roleRequiresCoding(role);
+        int codingCount = 0;
+        String codingInstructions = "";
+        if (hasCoding) {
+            if (durationMinutes == 30) {
+                codingCount = 1;
+                codingInstructions = "Include exactly 1 CODING question (difficulty: easy).";
+            } else if (durationMinutes == 60) {
+                codingCount = 2;
+                codingInstructions = "Include exactly 2 CODING questions: first easy, second medium.";
+            }
+        }
+        int textCount = count - codingCount;
 
         // ── Fresher-specific vs experienced prompt ──
         String depthInstructions;
@@ -425,27 +460,32 @@ public class GeminiService {
                 "Already asked questions (DO NOT repeat or ask similar ones):\n- %s\n\n" +
                 "%s\n\n" +
                 "%s\n\n" +
-                "Generate exactly %d NEW interview questions.\n" +
+                "Generate exactly %d TEXT questions and %d CODING questions.\n" +
                 "Allowed categories: %s\n\n" +
+                "%s\n\n" +
                 "Return ONLY a valid JSON array:\n" +
-                "[{\"question\":\"...\",\"category\":\"java_core\",\"difficulty\":\"medium\"}, ...]\n\n" +
+                "[{\"question\":\"...\",\"category\":\"java_core\",\"difficulty\":\"medium\",\"type\":\"text\"}, ...]\n\n" +
+                "For CODING questions, include:\n" +
+                "{\"question\":\"...\",\"category\":\"java_core\",\"difficulty\":\"easy\",\"type\":\"coding\",\"codingData\":{\"language\":\"java\",\"expectedOutput\":\"...\",\"testCases\":[{\"input\":\"...\",\"expectedOutput\":\"...\"}],\"description\":\"...\"}}\n\n" +
                 "Rules:\n" +
                 "- category must be one of: %s\n" +
-                "- difficulty: easy | medium | hard\n" +
+                "- difficulty: easy | medium | hard (NEVER hard for coding)\n" +
+                "- type: text | coding\n" +
+                "- For coding: language based on role (java for java_developer, javascript for react_developer, etc.)\n" +
                 "- DO NOT mention 'resume', 'your profile', 'as per your CV' in the question text\n" +
                 "- Each question must sound like a real human interviewer saying it out loud\n" +
                 "- No bullet-style or list-style questions (e.g. avoid 'List the types of...')\n" +
                 "- No repetitive openers across questions",
                 roleLabel, expLabel, resumeSummary, existing,
                 depthInstructions, questionStyleGuide,
-                count, allowed, allowed
+                textCount, codingCount, allowed, codingInstructions, allowed
         );
 
         String systemPrompt = buildInterviewerSystemPrompt(roleLabel, fresher);
 
         try {
             String raw = callGeminiWithTemp(prompt, systemPrompt, 0.9, userId, interviewId, callType);
-            List<Map<String, String>> questions = safeParseJsonArray(raw);
+            List<Map<String, Object>> questions = safeParseJsonArray(raw);
             if (questions.isEmpty()) {
                 log.warn("Gemini returned empty question list, using fallback");
                 return fallbackQuestions(count, role, allowedCategories, fresher);
@@ -605,19 +645,19 @@ public class GeminiService {
     // ── JSON Parsing Helpers ──
 
     @SuppressWarnings("unchecked")
-    public List<Map<String, String>> safeParseJsonArray(String raw) {
+    public List<Map<String, Object>> safeParseJsonArray(String raw) {
         try {
             String text = cleanJson(raw);
             int start = text.indexOf('[');
             int end = text.lastIndexOf(']');
             if (start >= 0 && end > start) text = text.substring(start, end + 1);
             JsonNode node = objectMapper.readTree(text);
-            List<Map<String, String>> result = new ArrayList<>();
+            List<Map<String, Object>> result = new ArrayList<>();
             for (JsonNode item : node) {
                 if (!item.isObject()) continue;
                 Map<String, String> m = new LinkedHashMap<>();
-                item.fields().forEachRemaining(e -> m.put(e.getKey(), e.getValue().asText()));
-                result.add(m);
+                Map<String, Object> converted = objectMapper.convertValue(item, Map.class);
+                result.add(converted);
             }
             return result;
         } catch (Exception e) {
@@ -720,12 +760,12 @@ public class GeminiService {
 
     // ── Fallback Helpers ──
 
-    private List<Map<String, String>> fallbackQuestions(int count, String role,
+    private List<Map<String, Object>> fallbackQuestions(int count, String role,
                                                          List<String> allowedCategories,
                                                          boolean fresher) {
         List<String> categories = (allowedCategories == null || allowedCategories.isEmpty())
                 ? categoriesForRole(role) : allowedCategories;
-        List<Map<String, String>> fallback = new ArrayList<>();
+        List<Map<String, Object>> fallback = new ArrayList<>();
 
         if (fresher) {
             fallback.add(Map.of(

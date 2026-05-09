@@ -231,6 +231,36 @@ public class InterviewRepository {
         }
     }
 
+    public void updateCodingSubmission(String interviewId, int questionIndex,
+                                        Interview.CodingSubmission codingSubmission) {
+        try {
+            var docRef = firestore.collection(COLLECTION).document(interviewId);
+            firestore.runTransaction(tx -> {
+                var snap = tx.get(docRef).get();
+                if (!snap.exists()) throw new RuntimeException("Interview not found: " + interviewId);
+
+                Interview iv = snap.toObject(Interview.class);
+                if (iv == null || iv.getQuestions() == null
+                        || questionIndex >= iv.getQuestions().size()) {
+                    throw new RuntimeException("Invalid question index: " + questionIndex);
+                }
+
+                var qa = iv.getQuestions().get(questionIndex);
+                qa.setCodingSubmission(codingSubmission);
+                qa.setAnswer(codingSubmission.getCode());
+                qa.setFeedback(codingSubmission.getAiEvaluation());
+                qa.setAnswerTimestamp(System.currentTimeMillis());
+                iv.getQuestions().set(questionIndex, qa);
+
+                tx.set(docRef, iv);
+                return null;
+            }).get();
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Error updating coding submission for interview {}: {}", interviewId, e.getMessage());
+            throw new RuntimeException("Failed to save coding submission", e);
+        }
+    }
+
     public int moveNextPooledQuestionToAsked(String interviewId) {
         try {
             var docRef = firestore.collection(COLLECTION).document(interviewId);

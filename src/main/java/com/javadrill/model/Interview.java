@@ -44,9 +44,46 @@ public class Interview {
         private String question;
         private String category;
         private String difficulty;
+        private String type; // "text" or "coding"
+        private CodingQuestionData codingData;
         private String answer;
         private String feedback;
         private long answerTimestamp;
+        private CodingSubmission codingSubmission;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CodingQuestionData {
+        private String language;
+        private String expectedOutput;
+        private List<TestCase> testCases;
+        private String description;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TestCase {
+        private String input;
+        private String expectedOutput;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CodingSubmission {
+        private String language;
+        private String code;
+        private String executionResult;
+        private String aiEvaluation;
+        private int score;
+        private long timeTakenMs;
+        private long submittedAt;
     }
 
     @Data

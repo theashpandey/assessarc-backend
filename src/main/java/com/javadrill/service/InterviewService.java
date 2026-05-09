@@ -101,7 +101,7 @@ public class InterviewService {
 
         List<Dto.QuestionDto> questions = buildQuestions(
                 resumeSummary, historicalQuestions, interviewRole, experienceLevel, resumeCategories,
-                uid, interviewId, "initial_question_generation");
+                durationMinutes, uid, interviewId, "initial_question_generation");
         if (questions.size() < 2) {
             throw new RuntimeException("Could not generate enough questions. Please try again.");
         }
@@ -112,6 +112,8 @@ public class InterviewService {
                         .question(q.getQuestion())
                         .category(q.getCategory())
                         .difficulty(q.getDifficulty())
+                        .type(q.getType())
+                        .codingData(toInterviewCodingData(q.getCodingData()))
                         .answer("")
                         .feedback("")
                         .build())
@@ -158,7 +160,7 @@ public class InterviewService {
      */
     private List<Dto.QuestionDto> buildQuestions(String resumeSummary, List<String> existingQuestionTexts,
                                                  String interviewRole, String experienceLevel,
-                                                 List<String> resumeCategories,
+                                                 List<String> resumeCategories, int durationMinutes,
                                                  String uid, String interviewId, String callType) {
         List<String> allowedCategories = geminiService.categoriesForInterview(interviewRole, resumeCategories);
         List<Dto.QuestionDto> result = new ArrayList<>();
@@ -168,34 +170,228 @@ public class InterviewService {
                 .collect(Collectors.toCollection(HashSet::new));
 
         log.info("Generating {} fresh questions.", TARGET_QUESTION_COUNT);
-        List<Map<String, String>> newQs = geminiService.generateQuestions(
+        List<Map<String, Object>> newQs = geminiService.generateQuestions(
                 resumeSummary, existingQuestionTexts, TARGET_QUESTION_COUNT,
-                interviewRole, experienceLevel, allowedCategories,
+                interviewRole, experienceLevel, allowedCategories, durationMinutes,
                 uid, interviewId, callType);
 
-        for (var qMap : newQs) {
-            String text = qMap.get("question");
-            String cat  = qMap.get("category");
-            String diff = qMap.getOrDefault("difficulty", "medium");
+        for (Map<String, Object> qMap : newQs) {
+            String text = textValue(qMap.get("question"));
+            String cat  = textValue(qMap.get("category"));
+            String diff = normalizeDifficulty(textValue(qMap.getOrDefault("difficulty", "medium")));
+            String type = "coding".equalsIgnoreCase(textValue(qMap.get("type"))) ? "coding" : "text";
+            if ("coding".equals(type) && "hard".equals(diff)) diff = "medium";
             if (text == null || text.isBlank() || cat == null || !allowedCategories.contains(cat)) continue;
             String normalized = normalizeQuestionText(text);
             if (normalized.isBlank() || !seenQuestionTexts.add(normalized)) continue;
 
-            result.add(Dto.QuestionDto.builder()
+            Dto.QuestionDto.QuestionDtoBuilder builder = Dto.QuestionDto.builder()
                     .id("ai_" + UUID.randomUUID())
                     .question(text)
                     .category(cat)
                     .difficulty(diff)
-                    .build());
+                    .type(type);
+
+            // Parse codingData if type is coding
+            if ("coding".equals(type)) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> codingDataMap = qMap.get("codingData") instanceof Map<?, ?>
+                            ? (Map<String, Object>) qMap.get("codingData") : Map.of();
+                    if (codingDataMap != null) {
+                        String language = textValue(codingDataMap.get("language"));
+                        String expectedOutput = textValue(codingDataMap.get("expectedOutput"));
+                        String description = textValue(codingDataMap.get("description"));
+                        List<?> testCasesList = codingDataMap.get("testCases") instanceof List<?>
+                                ? (List<?>) codingDataMap.get("testCases") : List.of();
+
+                        List<Dto.TestCase> testCases = testCasesList.stream()
+                                .filter(Map.class::isInstance)
+                                .map(Map.class::cast)
+                                .map(tc -> Dto.TestCase.builder()
+                                    .input(textValue(tc.get("input")))
+                                    .expectedOutput(textValue(tc.get("expectedOutput")))
+                                    .build())
+                                .collect(Collectors.toList());
+
+                        Dto.CodingQuestionData codingData = Dto.CodingQuestionData.builder()
+                                .language(defaultLanguageForRole(interviewRole, language))
+                                .expectedOutput(expectedOutput)
+                                .description(description)
+                                .testCases(testCases)
+                                .build();
+                        builder.codingData(codingData);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to parse codingData for question: {}", text);
+                }
+            }
+
+            result.add(builder.build());
         }
+
+        result = enforceCodingPlan(result, interviewRole, durationMinutes, allowedCategories, seenQuestionTexts);
 
         if (result.isEmpty()) {
             throw new RuntimeException("Could not generate questions. Please try again.");
         }
 
-        Collections.shuffle(result);
         log.info("Final question set: {} questions", result.size());
         return result;
+    }
+
+    private List<Dto.QuestionDto> enforceCodingPlan(List<Dto.QuestionDto> questions, String role,
+                                                     int durationMinutes, List<String> allowedCategories,
+                                                     Set<String> seenQuestionTexts) {
+        if (!geminiService.roleRequiresCoding(role) || (durationMinutes != 30 && durationMinutes != 60)) {
+            return questions.stream()
+                    .filter(q -> !"coding".equals(q.getType()))
+                    .limit(TARGET_QUESTION_COUNT)
+                    .collect(Collectors.toCollection(ArrayList::new));
+        }
+
+        List<String> required = durationMinutes == 30 ? List.of("easy") : List.of("easy", "medium");
+        List<Dto.QuestionDto> textQuestions = questions.stream()
+                .filter(q -> !"coding".equals(q.getType()))
+                .collect(Collectors.toCollection(ArrayList::new));
+        List<Dto.QuestionDto> codingQuestions = new ArrayList<>();
+
+        for (String difficulty : required) {
+            Optional<Dto.QuestionDto> match = questions.stream()
+                    .filter(q -> "coding".equals(q.getType()))
+                    .filter(q -> difficulty.equals(normalizeDifficulty(q.getDifficulty())))
+                    .findFirst();
+            Dto.QuestionDto coding = match.orElseGet(() ->
+                    fallbackCodingQuestion(role, difficulty, allowedCategories, seenQuestionTexts));
+            codingQuestions.add(Dto.QuestionDto.builder()
+                    .id(coding.getId())
+                    .question(coding.getQuestion())
+                    .category(coding.getCategory())
+                    .difficulty(difficulty)
+                    .type("coding")
+                    .codingData(coding.getCodingData())
+                    .build());
+        }
+
+        List<Dto.QuestionDto> planned = new ArrayList<>();
+        int firstCodingAt = Math.min(2, textQuestions.size());
+        int secondCodingAt = durationMinutes == 60 ? Math.min(6, textQuestions.size()) : -1;
+        for (int i = 0; i < textQuestions.size() && planned.size() < TARGET_QUESTION_COUNT; i++) {
+            if (planned.size() == firstCodingAt && !codingQuestions.isEmpty()) planned.add(codingQuestions.get(0));
+            if (planned.size() == secondCodingAt && codingQuestions.size() > 1) planned.add(codingQuestions.get(1));
+            if (planned.size() < TARGET_QUESTION_COUNT) planned.add(textQuestions.get(i));
+        }
+        for (Dto.QuestionDto coding : codingQuestions) {
+            boolean alreadyAdded = planned.stream().anyMatch(q -> q.getId().equals(coding.getId()));
+            if (!alreadyAdded && planned.size() < TARGET_QUESTION_COUNT) planned.add(coding);
+        }
+        return planned.stream().limit(TARGET_QUESTION_COUNT).collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private Dto.QuestionDto fallbackCodingQuestion(String role, String difficulty, List<String> allowedCategories,
+                                                   Set<String> seenQuestionTexts) {
+        String normalizedRole = geminiService.normalizeRole(role);
+        String language = defaultLanguageForRole(normalizedRole, null);
+        String category = allowedCategories.stream()
+                .filter(c -> !"behavioral".equals(c))
+                .findFirst()
+                .orElse("problem_solving");
+        String question = "Write a " + languageDisplayName(language) + " function to "
+                + ("medium".equals(difficulty)
+                ? "find the first non-repeating character in a string and return its index, or -1 if none exists."
+                : "return true if a given string is a palindrome after ignoring spaces and letter case.");
+        String normalized = normalizeQuestionText(question);
+        if (!seenQuestionTexts.add(normalized)) {
+            question = "Write a " + languageDisplayName(language) + " function to "
+                    + ("medium".equals(difficulty)
+                    ? "merge two sorted arrays and return one sorted array without using a built-in sort."
+                    : "return the largest number in an integer array.");
+        }
+        List<Dto.TestCase> testCases = "medium".equals(difficulty)
+                ? List.of(
+                    Dto.TestCase.builder().input("\"leetcode\"").expectedOutput("0").build(),
+                    Dto.TestCase.builder().input("\"aabb\"").expectedOutput("-1").build())
+                : List.of(
+                    Dto.TestCase.builder().input("\"Nurses Run\"").expectedOutput("true").build(),
+                    Dto.TestCase.builder().input("\"hello\"").expectedOutput("false").build());
+        return Dto.QuestionDto.builder()
+                .id("ai_" + UUID.randomUUID())
+                .question(question)
+                .category(category)
+                .difficulty(difficulty)
+                .type("coding")
+                .codingData(Dto.CodingQuestionData.builder()
+                        .language(language)
+                        .description(question)
+                        .expectedOutput("Return the requested value for all normal and edge cases.")
+                        .testCases(testCases)
+                        .build())
+                .build();
+    }
+
+    private String textValue(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private String normalizeDifficulty(String difficulty) {
+        String normalized = difficulty == null ? "" : difficulty.trim().toLowerCase(Locale.ROOT);
+        if ("easy".equals(normalized) || "medium".equals(normalized)) return normalized;
+        if ("hard".equals(normalized)) return "medium";
+        return "medium";
+    }
+
+    private String defaultLanguageForRole(String role, String requested) {
+        if (requested != null && !requested.isBlank()) return requested.trim().toLowerCase(Locale.ROOT);
+        String normalized = geminiService.normalizeRole(role);
+        if ("java_developer".equals(normalized) || "backend_engineer".equals(normalized)) return "java";
+        if ("python_developer".equals(normalized) || "data_scientist".equals(normalized)) return "python";
+        if ("react_developer".equals(normalized) || "frontend_engineer".equals(normalized)
+                || "full_stack_developer".equals(normalized)) return "javascript";
+        return "java";
+    }
+
+    private String languageDisplayName(String language) {
+        return switch (language) {
+            case "javascript" -> "JavaScript";
+            case "python" -> "Python";
+            case "cpp" -> "C++";
+            case "csharp" -> "C#";
+            default -> "Java";
+        };
+    }
+
+    private Interview.CodingQuestionData toInterviewCodingData(Dto.CodingQuestionData codingData) {
+        if (codingData == null) return null;
+        List<Interview.TestCase> testCases = codingData.getTestCases() == null ? List.of()
+                : codingData.getTestCases().stream()
+                    .map(tc -> Interview.TestCase.builder()
+                            .input(tc.getInput())
+                            .expectedOutput(tc.getExpectedOutput())
+                            .build())
+                    .collect(Collectors.toList());
+        return Interview.CodingQuestionData.builder()
+                .language(codingData.getLanguage())
+                .expectedOutput(codingData.getExpectedOutput())
+                .description(codingData.getDescription())
+                .testCases(testCases)
+                .build();
+    }
+
+    private Dto.CodingQuestionData toDtoCodingData(Interview.CodingQuestionData codingData) {
+        if (codingData == null) return null;
+        List<Dto.TestCase> testCases = codingData.getTestCases() == null ? List.of()
+                : codingData.getTestCases().stream()
+                    .map(tc -> Dto.TestCase.builder()
+                            .input(tc.getInput())
+                            .expectedOutput(tc.getExpectedOutput())
+                            .build())
+                    .collect(Collectors.toList());
+        return Dto.CodingQuestionData.builder()
+                .language(codingData.getLanguage())
+                .expectedOutput(codingData.getExpectedOutput())
+                .description(codingData.getDescription())
+                .testCases(testCases)
+                .build();
     }
     // -- Submit Answer --
     public Dto.NextQuestionResponse nextQuestion(String uid, Dto.NextQuestionRequest req) {
@@ -228,19 +424,19 @@ public class InterviewService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
         List<String> allowedCategories = geminiService.categoriesForInterview(
                 interview.getInterviewRole(), user.getResumeCategories());
-        List<Map<String, String>> generated = geminiService.generateQuestions(
+        List<Map<String, Object>> generated = geminiService.generateQuestions(
                 interview.getResumeSummary(), existingTexts, TARGET_QUESTION_COUNT,
                 interview.getInterviewRole(), interview.getExperienceLevel(), allowedCategories,
-                uid, interview.getId(), "next_question_generation");
+                0, uid, interview.getId(), "next_question_generation");
 
         List<Interview.QuestionAnswer> freshPool = new ArrayList<>();
         Set<String> seen = existingTexts.stream()
                 .map(this::normalizeQuestionText)
                 .collect(Collectors.toCollection(HashSet::new));
-        for (Map<String, String> qMap : generated) {
-            String text = qMap.get("question");
-            String cat = qMap.get("category");
-            String diff = qMap.getOrDefault("difficulty", "medium");
+        for (Map<String, Object> qMap : generated) {
+            String text = textValue(qMap.get("question"));
+            String cat = textValue(qMap.get("category"));
+            String diff = normalizeDifficulty(textValue(qMap.getOrDefault("difficulty", "medium")));
             if (text == null || text.isBlank() || cat == null || !allowedCategories.contains(cat)) continue;
             String normalized = normalizeQuestionText(text);
             if (normalized.isBlank() || !seen.add(normalized)) continue;
@@ -249,6 +445,7 @@ public class InterviewService {
                     .question(text)
                     .category(cat)
                     .difficulty(diff)
+                    .type("text")
                     .answer("")
                     .feedback("")
                     .build());
@@ -278,6 +475,8 @@ public class InterviewService {
                 .question(qa.getQuestion())
                 .category(qa.getCategory())
                 .difficulty(qa.getDifficulty())
+                .type(qa.getType() != null ? qa.getType() : "text")
+                .codingData(toDtoCodingData(qa.getCodingData()))
                 .build();
     }
 
@@ -366,6 +565,178 @@ public class InterviewService {
                 .build();
     }
 
+    // ── Submit Coding Answer ──
+    public Dto.SubmitCodingAnswerResponse submitCodingAnswer(String uid, Dto.SubmitCodingAnswerRequest req) {
+        Interview interview = interviewRepository.findById(req.getInterviewId())
+                .orElseThrow(() -> new RuntimeException("Interview not found"));
+
+        if (!interview.getUserId().equals(uid)) {
+            throw new RuntimeException("Unauthorized");
+        }
+        if (!"STARTED".equals(interview.getStatus())) {
+            throw new RuntimeException("Interview is not in progress");
+        }
+
+        int idx = req.getQuestionIndex();
+        List<Interview.QuestionAnswer> questions = interview.getQuestions();
+        if (questions == null || idx < 0 || idx >= questions.size()) {
+            throw new RuntimeException("Invalid question index: " + idx);
+        }
+
+        Interview.QuestionAnswer currentQ = questions.get(idx);
+        if (!"coding".equals(currentQ.getType())) {
+            throw new RuntimeException("This question is not a coding question");
+        }
+
+        String code = req.getCode() != null ? req.getCode().trim() : "";
+        String language = req.getLanguage();
+        long timeTakenMs = req.getTimeTakenMs();
+
+        String executionResult = executeCode(code, language, currentQ);
+        Map<String, Object> evaluation = evaluateCodingSolution(code, language, executionResult, currentQ,
+                interview.getInterviewRole(), interview.getExperienceLevel(), uid, interview.getId());
+        String aiEvaluation = String.valueOf(evaluation.getOrDefault("summary", "Code review completed."));
+        int score = calculateCodingScore(evaluation);
+        boolean isCorrect = score >= 80; // 80% or above considered correct
+
+        // Store coding submission
+        Interview.CodingSubmission codingSubmission = Interview.CodingSubmission.builder()
+                .language(language)
+                .code(code)
+                .executionResult(executionResult)
+                .aiEvaluation(aiEvaluation)
+                .score(score)
+                .timeTakenMs(timeTakenMs)
+                .submittedAt(System.currentTimeMillis())
+                .build();
+
+        interviewRepository.updateCodingSubmission(req.getInterviewId(), idx, codingSubmission);
+
+        String feedback = generateCodingFeedback(aiEvaluation, score, timeTakenMs);
+
+        return Dto.SubmitCodingAnswerResponse.builder()
+                .executionResult(executionResult)
+                .aiEvaluation(aiEvaluation)
+                .score(score)
+                .isCorrect(isCorrect)
+                .feedback(feedback)
+                .isLastQuestion(idx == questions.size() - 1)
+                .build();
+    }
+
+    private String executeCode(String code, String language, Interview.QuestionAnswer question) {
+        return "Not executed on server. Submission reviewed by AI against the prompt and test-case expectations.";
+    }
+
+    private Map<String, Object> evaluateCodingSolution(String code, String language, String executionResult,
+                                                       Interview.QuestionAnswer question, String role,
+                                                       String experienceLevel, String uid, String interviewId) {
+        if (code.isBlank()) {
+            return Map.of(
+                    "correctness", 0,
+                    "logic", 0,
+                    "syntax", 0,
+                    "optimization", 0,
+                    "edgeCases", 0,
+                    "overall", 0,
+                    "summary", "No code was submitted, so the solution cannot be evaluated.");
+        }
+
+        String tests = "";
+        if (question.getCodingData() != null && question.getCodingData().getTestCases() != null) {
+            tests = question.getCodingData().getTestCases().stream()
+                    .map(tc -> "Input: " + tc.getInput() + " | Expected: " + tc.getExpectedOutput())
+                    .collect(Collectors.joining("\n"));
+        }
+        String prompt = """
+                Evaluate this coding-round submission for a mock interview.
+
+                Role: %s
+                Experience level: %s
+                Difficulty: %s
+                Language: %s
+                Question: %s
+                Description: %s
+                Expected output: %s
+                Test cases:
+                %s
+
+                Candidate code:
+                ```%s
+                %s
+                ```
+
+                Server execution status: %s
+
+                Return ONLY valid JSON:
+                {
+                  "correctness": 0,
+                  "logic": 0,
+                  "syntax": 0,
+                  "optimization": 0,
+                  "edgeCases": 0,
+                  "overall": 0,
+                  "summary": "2-4 sentence interview-style evaluation covering correctness, logic, syntax, optimization, and edge cases"
+                }
+                Score each numeric field 0-100. Be strict but fair. Do not give credit for code that does not address the prompt.
+                """.formatted(
+                geminiService.roleLabel(role),
+                geminiService.experienceLabel(experienceLevel),
+                question.getDifficulty(),
+                language,
+                question.getQuestion(),
+                question.getCodingData() != null ? question.getCodingData().getDescription() : "",
+                question.getCodingData() != null ? question.getCodingData().getExpectedOutput() : "",
+                tests.isBlank() ? "none" : tests,
+                language,
+                truncate(code, 6000),
+                executionResult
+        );
+        try {
+            return geminiService.parseJsonObjectOrThrow(geminiService.callGeminiWithTemp(
+                    prompt,
+                    "You are a senior coding interviewer. Evaluate only the submitted code against the prompt. Return only JSON.",
+                    0.2, uid, interviewId, "coding_evaluation"));
+        } catch (Exception e) {
+            log.warn("Coding evaluation fallback for interview {}: {}", interviewId, e.getMessage());
+            return fallbackCodingEvaluation(code);
+        }
+    }
+
+    private Map<String, Object> fallbackCodingEvaluation(String code) {
+        int syntax = code.contains(";") || code.contains("def ") || code.contains("function ") ? 55 : 35;
+        int logic = code.length() > 80 ? 45 : 25;
+        int overall = Math.min(60, Math.round((syntax + logic) / 2.0f));
+        return Map.of(
+                "correctness", Math.max(20, overall - 10),
+                "logic", logic,
+                "syntax", syntax,
+                "optimization", Math.max(20, overall - 15),
+                "edgeCases", Math.max(15, overall - 20),
+                "overall", overall,
+                "summary", "The AI coding evaluator was temporarily unavailable, so this is a conservative fallback review. The submission was saved, but the score is capped until a detailed AI review can be generated.");
+    }
+
+    private int calculateCodingScore(Map<String, Object> evaluation) {
+        int explicit = toInt(evaluation.get("overall"), -1);
+        if (explicit >= 0) return clampScore(explicit);
+        int correctness = toInt(evaluation.get("correctness"), 0);
+        int logic = toInt(evaluation.get("logic"), 0);
+        int syntax = toInt(evaluation.get("syntax"), 0);
+        int optimization = toInt(evaluation.get("optimization"), 0);
+        int edgeCases = toInt(evaluation.get("edgeCases"), 0);
+        return clampScore(Math.round(correctness * 0.35f + logic * 0.25f + syntax * 0.15f
+                + optimization * 0.10f + edgeCases * 0.15f));
+    }
+
+    private int clampScore(int score) {
+        return Math.max(0, Math.min(100, score));
+    }
+
+    private String generateCodingFeedback(String aiEvaluation, int score, long timeTakenMs) {
+        return aiEvaluation + " Score: " + score + "/100. Time taken: " + (timeTakenMs / 1000) + "s";
+    }
+
     // ── Complete Interview ──
     public Dto.CompleteInterviewResponse completeInterview(String uid, String interviewId) {
         Interview interview = interviewRepository.findById(interviewId)
@@ -394,8 +765,16 @@ public class InterviewService {
                     Map<String, String> m = new LinkedHashMap<>();
                     m.put("question", q.getQuestion());
                     m.put("category", q.getCategory() != null ? q.getCategory() : "problem_solving");
-                    m.put("answer", q.getAnswer() != null && !q.getAnswer().isBlank()
-                            ? q.getAnswer() : "(no answer)");
+                    if ("coding".equals(q.getType()) && q.getCodingSubmission() != null) {
+                        Interview.CodingSubmission cs = q.getCodingSubmission();
+                        m.put("answer", "Coding submission in " + cs.getLanguage()
+                                + "\nCode:\n" + truncate(cs.getCode(), 1800)
+                                + "\nEvaluation:\n" + truncate(cs.getAiEvaluation(), 900)
+                                + "\nScore: " + cs.getScore() + "/100");
+                    } else {
+                        m.put("answer", q.getAnswer() != null && !q.getAnswer().isBlank()
+                                ? q.getAnswer() : "(no answer)");
+                    }
                     return m;
                 })
                 .collect(Collectors.toList());
@@ -509,8 +888,10 @@ public class InterviewService {
                                 .question(q.getQuestion())
                                 .category(q.getCategory())
                                 .difficulty(q.getDifficulty())
+                                .type(q.getType() != null ? q.getType() : "text")
                                 .answer(q.getAnswer() != null ? q.getAnswer() : "")
                                 .feedback(q.getFeedback() != null ? q.getFeedback() : "")
+                                .codingSubmission(toCodingSubmissionDetail(q.getCodingSubmission()))
                                 .build())
                         .collect(Collectors.toList());
 
@@ -558,8 +939,14 @@ public class InterviewService {
         for (Interview.QuestionAnswer q : qas) {
             sb.append("Category: ").append(q.getCategory()).append("\n");
             sb.append("Question: ").append(q.getQuestion()).append("\n");
-            sb.append("Answer: ").append(q.getAnswer() == null || q.getAnswer().isBlank()
-                    ? "(no answer)" : q.getAnswer()).append("\n");
+            if ("coding".equals(q.getType()) && q.getCodingSubmission() != null) {
+                sb.append("Coding language: ").append(q.getCodingSubmission().getLanguage()).append("\n");
+                sb.append("Code score: ").append(q.getCodingSubmission().getScore()).append("/100\n");
+                sb.append("Code evaluation: ").append(q.getCodingSubmission().getAiEvaluation()).append("\n");
+            } else {
+                sb.append("Answer: ").append(q.getAnswer() == null || q.getAnswer().isBlank()
+                        ? "(no answer)" : q.getAnswer()).append("\n");
+            }
             if (q.getFeedback() != null && !q.getFeedback().isBlank()) {
                 sb.append("Live feedback: ").append(q.getFeedback()).append("\n");
             }
@@ -634,6 +1021,23 @@ public class InterviewService {
                 .bestScore(score)
                 .trend("neutral")
                 .build();
+    }
+
+    private Dto.CodingSubmissionDetail toCodingSubmissionDetail(Interview.CodingSubmission codingSubmission) {
+        if (codingSubmission == null) return null;
+        return Dto.CodingSubmissionDetail.builder()
+                .language(codingSubmission.getLanguage())
+                .code(codingSubmission.getCode())
+                .executionResult(codingSubmission.getExecutionResult())
+                .aiEvaluation(codingSubmission.getAiEvaluation())
+                .score(codingSubmission.getScore())
+                .timeTakenMs(codingSubmission.getTimeTakenMs())
+                .build();
+    }
+
+    private String truncate(String value, int max) {
+        if (value == null) return "";
+        return value.length() <= max ? value : value.substring(0, max) + "...";
     }
 
     private int toInt(Object val, int fallback) {

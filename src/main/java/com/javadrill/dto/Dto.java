@@ -213,6 +213,22 @@ public class Dto {
         private String question;
         private String category;
         private String difficulty;
+        private String type; // "text" or "coding"
+        private CodingQuestionData codingData;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class CodingQuestionData {
+        private String language;
+        private String expectedOutput;
+        private List<TestCase> testCases;
+        private String description;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class TestCase {
+        private String input;
+        private String expectedOutput;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -225,6 +241,26 @@ public class Dto {
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class SubmitAnswerResponse {
+        private String feedback;
+        private boolean isLastQuestion;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class SubmitCodingAnswerRequest {
+        private String interviewId;
+        private String questionId;
+        private String code;
+        private String language;
+        private long timeTakenMs;
+        private int questionIndex;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class SubmitCodingAnswerResponse {
+        private String executionResult;
+        private String aiEvaluation;
+        private int score;
+        private boolean isCorrect;
         private String feedback;
         private boolean isLastQuestion;
     }
@@ -296,8 +332,20 @@ public class Dto {
         private String question;
         private String category;
         private String difficulty;
+        private String type;
         private String answer;
         private String feedback;
+        private CodingSubmissionDetail codingSubmission;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class CodingSubmissionDetail {
+        private String language;
+        private String code;
+        private String executionResult;
+        private String aiEvaluation;
+        private int score;
+        private long timeTakenMs;
     }
 
     // ── Feedback / Contact ──
@@ -424,7 +472,6 @@ public class Dto {
         private String key;
         private int count;
     }
-
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class AdminUserItem {
         private String uid;
