@@ -38,6 +38,10 @@ public class WalletService {
     private static final String REDEEM_REQUESTS_COLLECTION = "redeem_requests";
     private static final Pattern UPI_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}[A-Za-z0-9.-]*$");
 
+    private static final double PAYOUT_FEE = 2.5;
+    private static final double GST_RATE = 0.18;
+    private static final double TOTAL_FEE = PAYOUT_FEE * (1 + GST_RATE);
+
     private final UserRepository userRepository;
     private final WalletTransactionRepository walletTransactionRepository;
     private final AppProperties props;
@@ -182,15 +186,15 @@ public class WalletService {
                 if (!userSnap.exists()) throw new RuntimeException("User not found");
                 User user = userSnap.toObject(User.class);
                 Balances before = balances(user);
-                if (before.purchased() < amount) {
-                    throw new RuntimeException("Only purchased credits are redeemable. Available: " + before.purchased());
+                if (before.purchased() < amount + TOTAL_FEE) {
+                    throw new RuntimeException("Insufficient purchased credits. Available: " + before.purchased() + ", required: " + (amount + TOTAL_FEE));
                 }
                 String activeRedeemId = userSnap.getString("activeRedeemRequestId");
                 String activeRedeemStatus = userSnap.getString("activeRedeemStatus");
                 if (!isBlank(activeRedeemId) && ("PENDING".equals(activeRedeemStatus) || "APPROVED".equals(activeRedeemStatus))) {
                     throw new RuntimeException("You already have a pending redeem request.");
                 }
-                Balances after = new Balances(before.purchased() - amount, 0);
+                Balances after = new Balances(before.purchased() - (amount + TOTAL_FEE), 0);
 
                 RedeemRequest redeem = RedeemRequest.builder()
                         .id(requestId)
@@ -203,9 +207,9 @@ public class WalletService {
                         .updatedAt(now)
                         .build();
                 WalletTransaction walletTx = txBuilder(txId, uid, "REDEEM_REQUEST", amount, before, after,
-                        "Redeem request created. Bonus balance reset.", now)
+                        "Redeem request created for ₹" + amount + ". Fee ₹" + TOTAL_FEE + " deducted. Bonus balance reset.", now)
                         .redeemRequestId(requestId)
-                        .purchasedDelta(-amount)
+                        .purchasedDelta(-(amount + TOTAL_FEE))
                         .bonusDelta(-before.bonus())
                         .build();
 
@@ -259,7 +263,18 @@ public class WalletService {
 
     public Dto.RedeemRequestItem approveRedeem(String requestId, Dto.AdminRedeemActionRequest req) {
         RedeemRequest updated = updateRedeemStatus(requestId, "PENDING", "APPROVED", req, false);
-        triggerPayoutBestEffort(updated);
+        String payoutId = triggerPayoutBestEffort(updated);
+        if (payoutId != null) {
+            // success, set to DONE
+            updated.setPayoutId(payoutId);
+            updated.setStatus("DONE");
+            updated.setDoneAt(System.currentTimeMillis());
+            firestore.collection(REDEEM_REQUESTS_COLLECTION).document(requestId).set(updated);
+            firestore.collection(USERS_COLLECTION).document(updated.getUid()).update("activeRedeemRequestId", null, "activeRedeemStatus", null);
+        } else {
+            // failed, reject
+            return rejectRedeem(requestId, req);
+        }
         return toRedeemItem(updated);
     }
 
@@ -372,8 +387,8 @@ public class WalletService {
                 if ("DONE".equals(targetStatus)) redeem.setDoneAt(now);
                 if ("REJECTED".equals(targetStatus)) redeem.setRejectedAt(now);
 
-                transaction.set(reqRef, redeem);
                 if (refund) refundPurchasedCredits(transaction, redeem, now);
+                transaction.set(reqRef, redeem);
                 if ("APPROVED".equals(targetStatus)) {
                     transaction.update(firestore.collection(USERS_COLLECTION).document(redeem.getUid()),
                             "activeRedeemStatus", "APPROVED");
@@ -399,14 +414,14 @@ public class WalletService {
         var userSnap = transaction.get(userRef).get();
         if (!userSnap.exists()) throw new RuntimeException("User not found for refund");
         Balances before = balances(userSnap.toObject(User.class));
-        Balances after = new Balances(before.purchased() + redeem.getAmount(), before.bonus());
+        Balances after = new Balances(before.purchased() + redeem.getAmount() + TOTAL_FEE, before.bonus());
         String txId = "redeem_refund_" + redeem.getId();
         var txRef = firestore.collection(WALLET_TRANSACTIONS_COLLECTION).document(txId);
         var txSnap = transaction.get(txRef).get();
         if (txSnap.exists()) return;
-        WalletTransaction walletTx = txBuilder(txId, redeem.getUid(), "REDEEM_REFUND", redeem.getAmount(), before, after,
-                "Redeem request rejected. Purchased credits refunded.", now)
-                .purchasedDelta(redeem.getAmount())
+        WalletTransaction walletTx = txBuilder(txId, redeem.getUid(), "REDEEM_REFUND", redeem.getAmount() + TOTAL_FEE, before, after,
+                "Redeem request rejected. Purchased credits refunded including fee.", now)
+                .purchasedDelta(redeem.getAmount() + TOTAL_FEE)
                 .redeemRequestId(redeem.getId())
                 .build();
         transaction.update(userRef,
@@ -416,14 +431,14 @@ public class WalletService {
         transaction.set(txRef, walletTx);
     }
 
-    private void triggerPayoutBestEffort(RedeemRequest redeem) {
+    private String triggerPayoutBestEffort(RedeemRequest redeem) {
         String keyId = props.getRazorpay().getKeyId();
         String keySecret = props.getRazorpay().getKeySecret();
         String accountNumber = "2323230079048995";
             //props.getRazorpay().getAccountNumber();
         if (isBlank(keyId) || isBlank(keySecret) ) {
             log.warn("Razorpay payout skipped for redeem {} because payout config is incomplete", redeem.getId());
-            return;
+            return null;
         }
         User user = userRepository.findById(redeem.getUid())
             .orElseThrow(() -> new RuntimeException("User not found"));
@@ -457,10 +472,12 @@ public class WalletService {
             if (!isBlank(payoutId)) {
                 firestore.collection(REDEEM_REQUESTS_COLLECTION).document(redeem.getId()).update("payoutId", payoutId).get();
                 redeem.setPayoutId(payoutId);
+                return payoutId;
             }
         } catch (Exception e) {
             log.error("Razorpay payout failed for redeem {}: {}", redeem.getId(), e.getMessage());
         }
+        return null;
     }
 
     private WalletTransaction.WalletTransactionBuilder txBuilder(String id, String uid, String type, int amount,
