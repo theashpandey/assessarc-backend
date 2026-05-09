@@ -47,7 +47,9 @@ public class AppProperties {
                 "https://javadrill-frontend.vercel.app",
                 "https://javadrill.app",
                 "https://www.javadrill.app",
-                "https://javadrill.onrender.com"
+                "https://javadrill.onrender.com",
+                "https://www.diagnoto.com",
+                "https://diagnoto.com"
         );
     }
 

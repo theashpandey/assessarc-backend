@@ -32,7 +32,8 @@ javadrill:
   cors:
     allowed-origins:
       - http://localhost:3000
-      - http://localhost:5173
+      - https://www.diagnoto.com
+      - https://diagnoto.com
       - https://javadrill.onrender.com
       - https://javadrill-frontend.vercel.app
       - https://javadrill.app
