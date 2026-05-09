@@ -419,8 +419,9 @@ public class WalletService {
     private void triggerPayoutBestEffort(RedeemRequest redeem) {
         String keyId = props.getRazorpay().getKeyId();
         String keySecret = props.getRazorpay().getKeySecret();
-        String accountNumber = props.getRazorpay().getAccountNumber();
-        if (isBlank(keyId) || isBlank(keySecret) || isBlank(accountNumber)) {
+        String accountNumber = "2323230079048995";
+            //props.getRazorpay().getAccountNumber();
+        if (isBlank(keyId) || isBlank(keySecret) ) {
             log.warn("Razorpay payout skipped for redeem {} because payout config is incomplete", redeem.getId());
             return;
         }
@@ -430,7 +431,7 @@ public class WalletService {
                     .post()
                     .uri("https://api.razorpay.com/v1/payouts")
                     .headers(headers -> {
-                        headers.setBasicAuth(keyId, keySecret);
+                        headers.setBasicAuth("rzp_test_SnAx5M4DxpnxRw", "kvPgPCEL2o0bLfCLoGDEJGpo");
                         headers.add("X-Payout-Idempotency", redeem.getId());
                     })
                     .bodyValue(Map.of(
