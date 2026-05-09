@@ -425,6 +425,10 @@ public class WalletService {
             log.warn("Razorpay payout skipped for redeem {} because payout config is incomplete", redeem.getId());
             return;
         }
+        User user = userRepository.findById(redeem.getUid())
+            .orElseThrow(() -> new RuntimeException("User not found"));
+
+    String fundAccountId = ensureFundAccount(user, redeem.getUpiId());
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> payout = webClientBuilder.build()
@@ -435,22 +439,16 @@ public class WalletService {
                         headers.add("X-Payout-Idempotency", redeem.getId());
                     })
                     .bodyValue(Map.of(
-                            "account_number", accountNumber,
-                            "amount", redeem.getAmount() * 100,
-                            "currency", "INR",
-                            "mode", "UPI",
-                            "purpose", "refund",
-                            "fund_account", Map.of(
-                                    "account_type", "vpa",
-                                    "vpa", Map.of("address", redeem.getUpiId()),
-                                    "contact", Map.of(
-                                            "name", redeem.getUserEmail() != null ? redeem.getUserEmail() : redeem.getUid(),
-                                            "email", redeem.getUserEmail() != null ? redeem.getUserEmail() : "support@javadrill.app"
-                                    )
-                            ),
-                            "queue_if_low_balance", true,
-                            "reference_id", redeem.getId()
-                    ))
+                        "account_number", accountNumber,
+                        "fund_account_id", fundAccountId,
+                        "amount", redeem.getAmount() * 100,
+                        "currency", "INR",
+                        "mode", "UPI",
+                        "purpose", "payout",
+                        "queue_if_low_balance", true,
+                        "reference_id", redeem.getId(),
+                        "narration", "JavaDrill"
+                ))
                     .retrieve()
                     .bodyToMono(Map.class)
                     .timeout(Duration.ofSeconds(30))
@@ -564,6 +562,78 @@ public class WalletService {
         }
     }
 
+    private String ensureFundAccount(User user, String upiId) {
+
+      if (!isBlank(user.getRazorpayFundAccountId())) {
+          return user.getRazorpayFundAccountId();
+      }
+
+      String keyId = props.getRazorpay().getKeyId();
+      String keySecret = props.getRazorpay().getKeySecret();
+
+      try {
+
+          String contactId = user.getRazorpayContactId();
+
+          // CREATE CONTACT
+          if (isBlank(contactId)) {
+
+              @SuppressWarnings("unchecked")
+              Map<String, Object> contactResponse = webClientBuilder.build()
+                      .post()
+                      .uri("https://api.razorpay.com/v1/contacts")
+                      .headers(headers -> headers.setBasicAuth(keyId, keySecret))
+                      .bodyValue(Map.of(
+                              "name", user.getName() != null ? user.getName() : user.getUid(),
+                              "email", user.getEmail() != null ? user.getEmail() : "support@javadrill.app",
+                              "contact", "9000000000",
+                              "type", "customer"
+                      ))
+                      .retrieve()
+                      .bodyToMono(Map.class)
+                      .timeout(Duration.ofSeconds(30))
+                      .block();
+
+              contactId = String.valueOf(contactResponse.get("id"));
+
+              firestore.collection(USERS_COLLECTION)
+                      .document(user.getUid())
+                      .update("razorpayContactId", contactId)
+                      .get();
+          }
+
+          // CREATE FUND ACCOUNT
+
+          @SuppressWarnings("unchecked")
+          Map<String, Object> fundResponse = webClientBuilder.build()
+                  .post()
+                  .uri("https://api.razorpay.com/v1/fund_accounts")
+                  .headers(headers -> headers.setBasicAuth(keyId, keySecret))
+                  .bodyValue(Map.of(
+                          "contact_id", contactId,
+                          "account_type", "vpa",
+                          "vpa", Map.of(
+                                  "address", upiId
+                          )
+                  ))
+                  .retrieve()
+                  .bodyToMono(Map.class)
+                  .timeout(Duration.ofSeconds(30))
+                  .block();
+
+          String fundAccountId = String.valueOf(fundResponse.get("id"));
+
+          firestore.collection(USERS_COLLECTION)
+                  .document(user.getUid())
+                  .update("razorpayFundAccountId", fundAccountId)
+                  .get();
+
+          return fundAccountId;
+
+      } catch (Exception e) {
+          throw new RuntimeException("Failed to create Razorpay fund account: " + e.getMessage(), e);
+      }
+  }
     private String normalizeUpi(String upi) {
         return upi == null ? "" : upi.trim().toLowerCase();
     }

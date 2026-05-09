@@ -24,7 +24,8 @@ public class User {
     private String upiId;
     private long createdAt;
     private long lastActiveAt;
-
+    private String razorpayContactId;
+    private String razorpayFundAccountId;
     // Resume stored as plain text
     private String resumeText;
     private String resumeFileName;
