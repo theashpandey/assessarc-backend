@@ -38,9 +38,9 @@ public class WalletService {
     private static final String REDEEM_REQUESTS_COLLECTION = "redeem_requests";
     private static final Pattern UPI_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}[A-Za-z0-9.-]*$");
 
-    private static final double PAYOUT_FEE = 2.5;
+    private static final double PAYOUT_FEE = 2.5; // Rounded up from 2.5
     private static final double GST_RATE = 0.18;
-    private static final double TOTAL_FEE = PAYOUT_FEE * (1 + GST_RATE);
+    private static final int TOTAL_FEE = (int) Math.ceil(PAYOUT_FEE * (1 + GST_RATE)); // 3 * 1.18 = 3.54 → 4
 
     private final UserRepository userRepository;
     private final WalletTransactionRepository walletTransactionRepository;
