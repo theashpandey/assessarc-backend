@@ -382,6 +382,9 @@ cd assessarc-backend
 # Configure environment variables
 export GEMINI_API_KEYS=your_gemini_api_key
 export FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json
+export RAZORPAY_KEY_ID=your_razorpay_key
+export RAZORPAY_KEY_SECRET=your_razorpay_secret
+export RAZORPAY_ACCOUNT_NUMBER=your_razorpay_account_number
 
 # Build and run
 mvn clean install
@@ -413,8 +416,9 @@ assessarc:
   firebase:
     service-account-path: file:/etc/secrets/firebase-service-account.json
   razorpay:
-    key-id: your_razorpay_key
-    key-secret: your_razorpay_secret
+    key-id: ${RAZORPAY_KEY_ID:}
+    key-secret: ${RAZORPAY_KEY_SECRET:}
+    account-number: ${RAZORPAY_ACCOUNT_NUMBER:}
 ```
 
 ---
