@@ -24,9 +24,9 @@ assessarc:
     service-account-path: file:/etc/secrets/firebase-service-account.json
 
   razorpay:
-    key-id: ${RAZORPAY_KEY_ID:}
-    key-secret: ${RAZORPAY_KEY_SECRET:}
-    account-number: ${RAZORPAY_ACCOUNT_NUMBER:}
+    key-id: ${RAZORPAY_KEY_ID}
+    key-secret: ${RAZORPAY_KEY_SECRET}
+    account-number: ${RAZORPAY_ACCOUNT_NUMBER}
   admin:
     allowed-emails: ashish9145826@gmail.com
     allowed-uids: mUURcbQZkvhmuBHWRPIBvfswTsa2
