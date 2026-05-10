@@ -33,10 +33,10 @@ assessarc:
   cors:
     allowed-origins:
       - http://localhost:3000
-      - https://www.diagnoto.com
-      - https://diagnoto.com
+      - https://www.assessarc.com
+      - https://assessarc.com
       - https://assessarc.onrender.com
-      - https://assessarc-frontend.vercel.app
+      - https://assessarc.vercel.app
       - https://assessarc.app
       - https://www.assessarc.app
 

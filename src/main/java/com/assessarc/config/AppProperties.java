@@ -44,12 +44,12 @@ public class AppProperties {
     public static class Cors {
         private List<String> allowedOrigins = List.of(
                 "http://localhost:3000",
-                "https://assessarc-frontend.vercel.app",
+                "https://assessarc.vercel.app",
                 "https://assessarc.app",
                 "https://www.assessarc.app",
                 "https://assessarc.onrender.com",
-                "https://www.diagnoto.com",
-                "https://diagnoto.com"
+                "https://www.assessarc.com",
+                "https://assessarc.com"
         );
     }
 
