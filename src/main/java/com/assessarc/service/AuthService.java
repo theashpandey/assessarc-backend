@@ -1,0 +1,170 @@
+package com.assessarc.service;
+
+import com.google.firebase.auth.FirebaseToken;
+import com.assessarc.config.AppProperties;
+import com.assessarc.dto.Dto;
+import com.assessarc.model.User;
+import com.assessarc.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.util.Locale;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+
+    private static final String DEFAULT_AVATAR_URL = "/default-avatar.svg";
+
+    private final UserRepository userRepository;
+    private final AppProperties props;
+    private final AdminAuthService adminAuthService;
+
+    public Dto.AuthResponse loginOrRegister(String uid, FirebaseToken token) {
+        return loginOrRegister(uid, token, null);
+    }
+
+    public Dto.AuthResponse loginOrRegister(String uid, FirebaseToken token, String referralCode) {
+        return loginOrRegister(uid, token, referralCode, null);
+    }
+
+    public Dto.AuthResponse loginOrRegister(String uid, FirebaseToken token, String referralCode, String requestedName) {
+        var existing = userRepository.findById(uid);
+        boolean isNew = existing.isEmpty();
+        String resolvedName = resolveName(token, requestedName);
+
+        User user;
+        if (isNew) {
+            int signupBonus = Math.max(0, props.getWallet().getSignupBonus());
+            user = User.builder()
+                    .uid(uid)
+                    .name(resolvedName)
+                    .email(token.getEmail() != null ? token.getEmail().trim().toLowerCase(Locale.ROOT) : null)
+                    .photoUrl(resolvePhotoUrl(token))
+                    .walletCredits(signupBonus)
+                    .purchasedCredits(0)
+                    .bonusCredits(signupBonus)
+                    .createdAt(System.currentTimeMillis())
+                    .lastActiveAt(System.currentTimeMillis())
+                    .totalInterviews(0)
+                    .avgScore(0.0)
+                    .bestScore(0)
+                    .referralCode(generateReferralCode(uid))
+                    .build();
+            user = userRepository.createUserWithReferralReward(user, referralCode, 10);
+            log.info("New user registered: {} ({})", uid, token.getEmail());
+        } else {
+            user = existing.get();
+            boolean shouldSave = false;
+            int total = normalizedTotalCredits(user);
+            if (user.getPurchasedCredits() == 0 && user.getBonusCredits() == 0 && user.getWalletCredits() > 0) {
+                user.setPurchasedCredits(user.getWalletCredits());
+                user.setBonusCredits(0);
+                shouldSave = true;
+            }
+            if (user.getWalletCredits() != total) {
+                user.setWalletCredits(total);
+                shouldSave = true;
+            }
+            if (requestedName != null && !requestedName.isBlank()
+                    && (user.getName() == null || user.getName().isBlank() || "User".equalsIgnoreCase(user.getName()))) {
+                user.setName(requestedName.trim());
+                shouldSave = true;
+            }
+            if (user.getReferralCode() == null || user.getReferralCode().isBlank()) {
+                user.setReferralCode(generateReferralCode(uid));
+                shouldSave = true;
+            }
+            if (user.getPhotoUrl() == null || user.getPhotoUrl().isBlank()) {
+                user.setPhotoUrl(resolvePhotoUrl(token));
+                shouldSave = true;
+            }
+            if (shouldSave) {
+                userRepository.save(user);
+            }
+            userRepository.updateLastActive(uid);
+        }
+
+        return Dto.AuthResponse.builder()
+                .uid(user.getUid())
+                .name(user.getName())
+                .email(user.getEmail())
+                .photoUrl(user.getPhotoUrl())
+                .walletCredits(normalizedTotalCredits(user))
+                .purchasedCredits(normalizedPurchasedCredits(user))
+                .bonusCredits(Math.max(0, user.getBonusCredits()))
+                .hasResume(user.getResumeText() != null && !user.getResumeText().isBlank())
+                .interviewRole(user.getInterviewRole())
+                .experienceLevel(user.getExperienceLevel())
+                .isNewUser(isNew)
+                .totalInterviews(user.getTotalInterviews())
+                .avgScore(user.getAvgScore())
+                .referralCode(user.getReferralCode())
+                .isAdmin(adminAuthService.isAdmin(user.getUid(), user.getEmail()))
+                .build();
+    }
+
+    public Dto.UserProfileResponse getProfile(String uid) {
+        var user = userRepository.findById(uid)
+                .orElseThrow(() -> new RuntimeException("User not found: " + uid));
+        return Dto.UserProfileResponse.builder()
+                .uid(user.getUid())
+                .name(user.getName())
+                .email(user.getEmail())
+                .photoUrl(user.getPhotoUrl())
+                .walletCredits(normalizedTotalCredits(user))
+                .purchasedCredits(normalizedPurchasedCredits(user))
+                .bonusCredits(Math.max(0, user.getBonusCredits()))
+                .hasResume(user.getResumeText() != null && !user.getResumeText().isBlank())
+                .resumeFileName(user.getResumeFileName())
+                .resumeUploadedAt(user.getResumeUploadedAt())
+                .interviewRole(user.getInterviewRole())
+                .experienceLevel(user.getExperienceLevel())
+                .createdAt(user.getCreatedAt())
+                .totalInterviews(user.getTotalInterviews())
+                .avgScore(user.getAvgScore())
+                .bestScore(user.getBestScore())
+                .referralCode(user.getReferralCode())
+                .referredBy(user.getReferredBy())
+                .isAdmin(adminAuthService.isAdmin(user.getUid(), user.getEmail()))
+                .build();
+    }
+
+    private String generateReferralCode(String uid) {
+        String clean = uid.replaceAll("[^A-Za-z0-9]", "");
+        return ("JD" + clean.substring(0, Math.min(8, clean.length()))).toUpperCase(Locale.ROOT);
+    }
+
+    private String resolvePhotoUrl(FirebaseToken token) {
+        Object picture = token.getClaims().get("picture");
+        if (picture instanceof String photoUrl && !photoUrl.isBlank()) {
+            return photoUrl;
+        }
+        return DEFAULT_AVATAR_URL;
+    }
+
+    private String resolveName(FirebaseToken token, String requestedName) {
+        if (requestedName != null && !requestedName.isBlank()) {
+            return requestedName.trim();
+        }
+        if (token.getName() != null && !token.getName().isBlank()) {
+            return token.getName().trim();
+        }
+        return "User";
+    }
+
+    private int normalizedPurchasedCredits(User user) {
+        if (user == null) return 0;
+        if (user.getPurchasedCredits() == 0 && user.getBonusCredits() == 0 && user.getWalletCredits() > 0) {
+            return user.getWalletCredits();
+        }
+        return Math.max(0, user.getPurchasedCredits());
+    }
+
+    private int normalizedTotalCredits(User user) {
+        return normalizedPurchasedCredits(user) + Math.max(0, user != null ? user.getBonusCredits() : 0);
+    }
+
+}

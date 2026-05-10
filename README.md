@@ -1,4 +1,4 @@
-# JavaDrill - AI-Powered Java Mock Interview Platform
+# AssessArc - AI-Powered Java Mock Interview Platform
 
 [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.java.net/projects/jdk/17/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.0-brightgreen)](https://spring.io/projects/spring-boot)
@@ -10,7 +10,7 @@
 
 ## 📋 Table of Contents
 
-- [What is JavaDrill?](#-what-is-javadrill)
+- [What is AssessArc?](#-what-is-assessarc)
 - [Core Features](#-core-features)
 - [Technology Stack](#-technology-stack)
 - [User Journey Example](#-user-journey-example)
@@ -29,9 +29,9 @@
 
 ---
 
-## 🎯 What is JavaDrill?
+## 🎯 What is AssessArc?
 
-**JavaDrill** is an AI-powered mock interview platform specifically designed for Java developers preparing for technical interviews. Unlike generic interview prep tools, JavaDrill offers:
+**AssessArc** is an AI-powered mock interview platform specifically designed for Java developers preparing for technical interviews. Unlike generic interview prep tools, AssessArc offers:
 
 - **Voice-first interviews** with Sarah AI (conversational, human-like experience)
 - **Resume-tailored questions** based on your actual experience and tech stack
@@ -105,7 +105,7 @@ The platform simulates realistic Java developer interviews with questions rangin
 Let's follow **Rahul**, a 3-year experienced Java developer preparing for FAANG interviews:
 
 ### Step 1: Discovery & Signup
-Rahul finds JavaDrill through Google search for "Java interview preparation". He visits the landing page and sees:
+Rahul finds AssessArc through Google search for "Java interview preparation". He visits the landing page and sees:
 - Clear value proposition: "Practice Java interviews with AI that sounds human"
 - Social proof and testimonials
 - Free signup with 10 credits (worth ₹10)
@@ -376,8 +376,8 @@ Answers → AI Feedback → Performance Analytics
 ### Backend Setup
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/javadrill-backend.git
-cd javadrill-backend
+git clone https://github.com/yourusername/assessarc-backend.git
+cd assessarc-backend
 
 # Configure environment variables
 export GEMINI_API_KEYS=your_gemini_api_key
@@ -391,8 +391,8 @@ mvn spring-boot:run
 ### Frontend Setup
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/javadrill-frontend.git
-cd javadrill-frontend
+git clone https://github.com/yourusername/assessarc-frontend.git
+cd assessarc-frontend
 
 # Install dependencies
 npm install
@@ -407,7 +407,7 @@ npm start
 ### Environment Configuration
 ```yaml
 # application.yml
-javadrill:
+assessarc:
   gemini:
     api-key: ${GEMINI_API_KEYS}
   firebase:
@@ -549,7 +549,7 @@ javadrill:
 # render.yaml
 services:
   - type: web
-    name: javadrill-backend
+    name: assessarc-backend
     env: docker
     buildCommand: mvn clean package -DskipTests
     startCommand: java -jar target/*.jar
@@ -567,7 +567,7 @@ services:
   "buildCommand": "npm run build",
   "outputDirectory": "build",
   "env": {
-    "REACT_APP_API_URL": "https://javadrill-backend.onrender.com"
+    "REACT_APP_API_URL": "https://assessarc-backend.onrender.com"
   }
 }
 ```
@@ -581,7 +581,7 @@ RAZORPAY_KEY_ID=rzp_live_xxx
 RAZORPAY_KEY_SECRET=your_secret
 
 # Frontend
-REACT_APP_API_URL=https://api.javadrill.app
+REACT_APP_API_URL=https://api.assessarc.app
 REACT_APP_FIREBASE_CONFIG=your_firebase_config
 ```
 
@@ -639,9 +639,9 @@ REACT_APP_FIREBASE_CONFIG=your_firebase_config
 
 ## 📞 Support & Contact
 
-- **Email**: support@javadrill.app
-- **Website**: https://javadrill.app
-- **Documentation**: https://docs.javadrill.app
+- **Email**: support@assessarc.app
+- **Website**: https://assessarc.app
+- **Documentation**: https://docs.assessarc.app
 - **Community**: [Discord/Telegram group]
 
 ---
@@ -737,7 +737,7 @@ Create these composite indexes in Firebase console:
 mvn clean package -DskipTests
 
 # 3. Run
-java -jar target/javadrill-backend-1.0.0.jar
+java -jar target/assessarc-backend-1.0.0.jar
 
 # Server starts on port 8080
 ```

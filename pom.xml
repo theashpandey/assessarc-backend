@@ -11,10 +11,10 @@
     <relativePath/>
   </parent>
 
-  <groupId>com.javadrill</groupId>
-  <artifactId>javadrill-backend</artifactId>
+  <groupId>com.assessarc</groupId>
+  <artifactId>assessarc-backend</artifactId>
   <version>1.0.0</version>
-  <name>JavaDrill Backend</name>
+  <name>AssessArc Backend</name>
   <description>AI-powered Java mock interview platform backend</description>
 
   <properties>

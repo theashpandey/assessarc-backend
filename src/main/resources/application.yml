@@ -3,7 +3,7 @@ server:
 
 spring:
   application:
-    name: javadrill-backend
+    name: assessarc-backend
   servlet:
     multipart:
       max-file-size: 5MB
@@ -14,8 +14,8 @@ spring:
   jackson:
     default-property-inclusion: NON_NULL
 
-# ── JavaDrill Config ──
-javadrill:
+# ── AssessArc Config ──
+assessarc:
   gemini:
     api-key: ${GEMINI_API_KEYS}
     url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent
@@ -34,10 +34,10 @@ javadrill:
       - http://localhost:3000
       - https://www.diagnoto.com
       - https://diagnoto.com
-      - https://javadrill.onrender.com
-      - https://javadrill-frontend.vercel.app
-      - https://javadrill.app
-      - https://www.javadrill.app
+      - https://assessarc.onrender.com
+      - https://assessarc-frontend.vercel.app
+      - https://assessarc.app
+      - https://www.assessarc.app
 
   wallet:
     signup-bonus: 10
@@ -46,6 +46,6 @@ javadrill:
 
 logging:
   level:
-    com.javadrill: DEBUG
+    com.assessarc: DEBUG
     org.springframework.security: WARN
     org.springframework.web: WARN
