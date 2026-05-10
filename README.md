@@ -126,7 +126,7 @@ Rahul uploads his resume (PDF format). The system:
 ```
 Dashboard → Start Interview → Select 30-minute session
 ```
-- **Cost**: 5 credits (₹5 equivalent)
+- **Cost**: 10 credits (₹10 equivalent)
 - **Question Types**: Mix of technical + behavioral
 - **Voice Interaction**: Sarah AI greets him and starts asking questions
 
@@ -162,7 +162,7 @@ Dashboard → Performance Analytics
 
 ### Step 6: Skill Development Loop
 Rahul identifies weak areas (System Design) and practices more sessions:
-- Purchases credit pack: ₹59 for 70 credits (+10 bonus = 80 total)
+- Purchases credit pack: ₹59 for 70 total credits (60 purchased + 10 bonus)
 - Focuses on specific categories
 - Tracks progress with detailed analytics
 
@@ -216,17 +216,17 @@ Answers → AI Feedback → Performance Analytics
 ### Credit System
 - **1 Credit = ₹1** (simplified pricing)
 - **Session Costs**:
-  - 30 minutes: 5 credits
-  - 60 minutes: 10 credits
+  - 30 minutes: 10 credits
+  - 60 minutes: 15 credits
 
 ### Credit Packs (Razorpay Integration)
-| Pack | Credits | Price | Bonus | Value | Sessions (60min) |
+| Pack | Credits | Price | Bonus | Value | Sessions (30/60min) |
 |------|---------|-------|-------|-------|------------------|
-| Single | 10 | ₹10 | 0 | 100% | 1 |
-| Starter | 35 | ₹29 | 5 | 138% | 3-4 |
-| **Pro** | 70 | ₹59 | 10 | 136% | 7-8 |
-| Elite | 115 | ₹99 | 15 | 142% | 11-13 |
-| Titan | 220 | ₹199 | 20 | 121% | 22-24 |
+| Single | 10 | ₹10 | 0 | 100% | 1 / 0 |
+| Starter | 35 | ₹29 | 5 | 138% | 3 / 2 |
+| **Pro** | 70 | ₹59 | 10 | 136% | 7 / 4 |
+| Elite | 115 | ₹99 | 15 | 142% | 11 / 7 |
+| Titan | 220 | ₹199 | 20 | 121% | 22 / 14 |
 
 ### Revenue Streams
 1. **Session Credits**: Primary revenue from interview sessions
@@ -234,7 +234,7 @@ Answers → AI Feedback → Performance Analytics
 3. **Redemption Fees**: Razorpay charges ₹2.5 + 18% GST per payout
 
 ### Freemium Model
-- **Free Tier**: 10 credits on signup (1 full interview)
+- **Free Tier**: 10 credits on signup (1 quick 30-minute interview)
 - **Conversion**: Free users become paying customers
 - **Retention**: Analytics and progress tracking encourage continued use
 
@@ -328,7 +328,7 @@ Answers → AI Feedback → Performance Analytics
 
 ### Competitive Advantages
 - **AI Quality**: Latest Gemini 2.0 model vs competitors' older AI
-- **Cost Effective**: ₹59 for 80 credits vs ₹999/month subscriptions
+- **Cost Effective**: ₹59 for 70 total credits vs ₹999/month subscriptions
 - **Local Optimization**: Indian English, UPI payments, local pricing
 - **Technical Depth**: Java-specific questions vs generic coding interviews
 - **Voice Technology**: More realistic than chat-based platforms
@@ -698,18 +698,19 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 | Duration | Credits Deducted | Equivalent |
 |----------|-----------------|------------|
-| 30 min | 5 credits | ₹5 |
-| 60 min | 10 credits | ₹10 |
+| 30 min | 10 credits | ₹10 |
+| 60 min | 15 credits | ₹15 |
 
 Credit Packs (via Razorpay):
 | Pack | Price |
 |------|-------|
 | 10 credits | ₹10 |
-| 25 credits | ₹24 |
-| 50 credits | ₹45 |
-| 100 credits | ₹80 |
+| 35 credits | ₹29 |
+| 70 credits | ₹59 |
+| 115 credits | ₹99 |
+| 220 credits | ₹199 |
 
-Signup bonus: **10 credits** (1 free interview)
+Signup bonus: **10 credits** (1 free 30-minute interview)
 
 ---
 

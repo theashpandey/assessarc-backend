@@ -55,8 +55,8 @@ public class AppProperties {
 
     @Data
     public static class Wallet {
-        private int signupBonus = 10;   // 10 credits free = 1 interview
-        private int price30min = 5;     // ₹5 equivalent
-        private int price60min = 10;    // ₹10 equivalent
+        private int signupBonus = 10;   // 10 credits free = 1 quick interview
+        private int price30min = 10;    // Rs 10 equivalent
+        private int price60min = 15;    // Rs 15 equivalent
     }
 }

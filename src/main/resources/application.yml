@@ -42,8 +42,8 @@ assessarc:
 
   wallet:
     signup-bonus: 10
-    price-30min: 5
-    price-60min: 10
+    price-30min: 10
+    price-60min: 15
 
 logging:
   level:
