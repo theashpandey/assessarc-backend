@@ -10,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 public class SelfPingService {
 
     private final RestTemplate restTemplate = new RestTemplate();
-    private static final String SELF_URL = "https://assessarc.onrender.com/api/ping";
+    private static final String SELF_URL = "https://assessarcapp.onrender.com/api/ping";
 
     @Scheduled(fixedRate = 5 * 60 * 1000) // every 5 minutes
     public void pingSelf() {

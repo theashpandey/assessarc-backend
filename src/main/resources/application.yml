@@ -35,7 +35,7 @@ assessarc:
       - http://localhost:3000
       - https://www.assessarc.com
       - https://assessarc.com
-      - https://assessarc.onrender.com
+      - https://assessarcapp.onrender.com
       - https://assessarc.vercel.app
       - https://assessarc.app
       - https://www.assessarc.app
