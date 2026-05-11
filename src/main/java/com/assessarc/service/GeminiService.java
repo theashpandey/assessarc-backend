@@ -451,6 +451,12 @@ public class GeminiService {
                 "[{\"question\":\"...\",\"category\":\"java_core\",\"difficulty\":\"medium\",\"type\":\"text\"}, ...]\n\n" +
                 "For CODING questions, include:\n" +
                 "{\"question\":\"...\",\"category\":\"java_core\",\"difficulty\":\"easy\",\"type\":\"coding\",\"codingData\":{\"language\":\"%s\",\"expectedOutput\":\"...\",\"testCases\":[{\"input\":\"...\",\"expectedOutput\":\"...\"}],\"description\":\"...\"}}\n\n" +
+                "CODING formatting rules:\n" +
+                "- question must be ONLY a short title/instruction, one sentence max.\n" +
+                "- Do NOT put labels like Problem Description, Expected Output, Examples, or Test Cases inside question.\n" +
+                "- Put the full statement only in codingData.description.\n" +
+                "- Put every sample input/output only in codingData.testCases.\n" +
+                "- Put the return/output requirement only in codingData.expectedOutput.\n\n" +
                 "Rules:\n" +
                 "- category must be one of: %s\n" +
                 "- difficulty: easy | medium | hard (NEVER hard for coding)\n" +
@@ -1008,54 +1014,106 @@ public class GeminiService {
         return calculateScores(qaList, role, experienceLevel, allowedCategories, null, null);
     }
 
-    public Map<String, Object> calculateScores(List<Map<String, String>> qaList,
-                                               String role, String experienceLevel,
-                                               List<String> allowedCategories,
-                                               String userId, String interviewId) {
-        boolean fresher = isFresher(experienceLevel);
-        String roleLabel = roleLabel(role);
+    public Map<String, Object> calculateScores(List<Map<String, String>> qaList, String role, String experienceLevel,
+        List<String> allowedCategories, String userId, String interviewId) {
+      boolean fresher = isFresher(experienceLevel);
+      String roleLabel = roleLabel(role);
 
-        var sb = new StringBuilder("Interview Q&As to evaluate:\n\n");
-        sb.append("Target role: ").append(roleLabel).append("\n");
-        sb.append("Experience level: ").append(experienceLabel(experienceLevel)).append("\n");
-        sb.append("Allowed scoring categories: ").append(String.join(", ", allowedCategories)).append("\n\n");
+      var sb = new StringBuilder();
 
-        for (var qa : qaList) {
-            String catLabel = categoryLabel(qa.get("category"));
-            String answer = qa.getOrDefault("answer", "(no answer)");
-            if (answer.isBlank()) answer = "(no answer given)";
-            sb.append("[").append(catLabel).append("] Q: ").append(qa.get("question"))
-              .append("\nA: ").append(answer).append("\n\n");
-        }
+      // ── Per-answer block ──
+      sb.append("You are evaluating a mock interview for a ").append(roleLabel).append(" candidate.\n");
+      sb.append("Experience level: ").append(experienceLabel(experienceLevel)).append("\n\n");
+      sb.append("Below are the interview questions and the candidate's actual answers.\n");
+      sb.append("Read each answer carefully and judge it STRICTLY on its own merit.\n\n");
+      sb.append("=== INTERVIEW RESPONSES ===\n\n");
 
-        String scoringContext = fresher
-                ? "This is a FRESHER candidate. Score based on conceptual clarity, curiosity, learning ability, " +
-                  "and fundamentals — NOT on production experience or architectural depth. " +
-                  "A strong fresher answer demonstrates understanding of concepts, logical thinking, and honest self-awareness."
-                : "This is an experienced candidate. Score on depth of reasoning, tradeoffs mentioned, " +
-                  "ownership shown, real-world judgment, and technical accuracy.";
+      int qNum = 1;
+      for (var qa : qaList) {
+        String catLabel = categoryLabel(qa.get("category"));
+        String answer = qa.getOrDefault("answer", "");
+        String answerText = (answer == null || answer.isBlank()) ? "(no answer given — candidate was silent or skipped)"
+            : answer.trim();
+        sb.append("Q").append(qNum).append(" [").append(catLabel).append("]: ").append(qa.get("question")).append("\n");
+        sb.append("Answer: ").append(answerText).append("\n\n");
+        qNum++;
+      }
 
-        sb.append(scoringContext).append("\n\n")
-          .append("Score each dimension out of 100. Be realistic — do not inflate scores.\n")
-          .append("The categories object must only include these keys: ")
-          .append(String.join(", ", allowedCategories)).append(".\n")
-          .append("technical = role-specific professional depth (not just coding ability).\n")
-          .append("Return ONLY valid JSON (no markdown):\n")
-          .append("{\"technical\":75,\"communication\":80,\"problemSolving\":70,")
-          .append("\"roleDepth\":78,\"overall\":76,")
-          .append("\"categories\":{\"problem_solving\":72,\"behavioral\":85}}");
+      // ── Scoring rubric with hard anchors ──
+      sb.append("=== SCORING RUBRIC (MANDATORY — READ BEFORE SCORING) ===\n\n");
+      sb.append("Score range is 0–100. Use the FULL range. These are HARD anchors — match them exactly:\n\n");
 
-        try {
-            String raw = callGeminiWithTemp(sb.toString(),
-                    "You are a strict " + roleLabel + " interview evaluator. " +
-                    "Score realistically based on actual answer quality. Do not give inflated scores. " +
-                    "Return only valid JSON.",
-                    0.3, userId, interviewId, "score_calculation");
-            return parseJsonObjectOrThrow(raw);
-        } catch (GeminiQuotaException | GeminiUnavailableException e) {
-            log.warn("Gemini unavailable while scoring: {}", e.getMessage());
-            throw e;
-        }
+      sb.append("0–15  → No answer, completely wrong, or total nonsense. Candidate had no idea.\n");
+      sb.append(
+          "16–30 → Very weak. Candidate showed a vague or incorrect understanding. Major gaps. Buzzwords without substance.\n");
+      sb.append(
+          "31–45 → Below average. Partial understanding but significant gaps or confusion. Would NOT pass a real interview screening.\n");
+      sb.append(
+          "46–60 → Average. Some correct points but incomplete, missing key concepts, or lacking depth. Borderline pass.\n");
+      sb.append(
+          "61–75 → Good. Correct understanding, reasonable depth. Minor gaps. Would likely pass a real interview round.\n");
+      sb.append("76–88 → Strong. Clear, accurate, well-reasoned answer. Covers the key points confidently.\n");
+      sb.append(
+          "89–100 → Exceptional. Deep insight, nuance, tradeoffs, real-world awareness. Rare — only for truly outstanding answers.\n\n");
+
+      sb.append("CRITICAL RULES:\n");
+      sb.append(
+          "- If the answer is wrong direction, off-topic, or misunderstands the question → score MUST be below 10.\n");
+      sb.append("- If the answer is partially correct but missing the core concept → score MUST be below 30.\n");
+      sb.append("- If the candidate says 'I don't know' or gives a very vague guess → score MUST be below 0.\n");
+      sb.append("- Do NOT reward effort, length, or confidence if the content is wrong.\n");
+      sb.append("- Do NOT assume the candidate meant something correct if they said something wrong.\n");
+      sb.append("- Scores of 70+ must be EARNED by clear, accurate, reasonably complete answers.\n");
+      sb.append("- Scores above 85 are rare. Only give them if the answer is genuinely impressive.\n\n");
+
+      // ── Experience-level context ──
+      if (fresher) {
+        sb.append("EXPERIENCE CONTEXT: This is a FRESHER. Score on conceptual clarity and fundamentals.\n");
+        sb.append("A fresher who explains a concept correctly in simple terms deserves a fair score.\n");
+        sb.append(
+            "A fresher who says something completely wrong or irrelevant still scores below 30 — being a fresher is not an excuse for a wrong answer.\n\n");
+      } else {
+        sb.append("EXPERIENCE CONTEXT: This is an EXPERIENCED candidate (").append(experienceLabel(experienceLevel))
+            .append(").\n");
+        sb.append(
+            "Hold them to a higher standard. Vague or surface-level answers from an experienced candidate score below 45.\n");
+        sb.append(
+            "They are expected to show depth, tradeoffs, and real-world reasoning — not just textbook definitions.\n\n");
+      }
+
+      // ── Output format ──
+      sb.append("=== OUTPUT FORMAT ===\n\n");
+      sb.append("First score each dimension based on the answers above:\n");
+      sb.append("- technical: role-specific technical knowledge and accuracy\n");
+      sb.append("- communication: how clearly and coherently they expressed their answers\n");
+      sb.append("- problemSolving: logical thinking, structured reasoning, approach to problems\n");
+      sb.append("- roleDepth: depth of understanding specific to the ").append(roleLabel).append(" role\n");
+      sb.append("- overall: honest weighted average of all dimensions\n\n");
+      sb.append("Also score each category from the interview:\n");
+      sb.append("Allowed category keys: ").append(String.join(", ", allowedCategories)).append("\n\n");
+      sb.append("Return ONLY valid JSON, no markdown, no explanation:\n");
+      sb.append("{\"technical\":45,\"communication\":60,\"problemSolving\":38,\"roleDepth\":42,\"overall\":46,\n");
+      sb.append("\"categories\":{\"")
+          .append(allowedCategories.isEmpty() ? "problem_solving" : allowedCategories.get(0));
+      sb.append("\":40}}\n\n");
+      sb.append("Do not add any text outside the JSON object.");
+
+      String systemPrompt = "You are a brutally honest, strict interview evaluator at a top product-based company like Google or Amazon. "
+          + "Your job is to score candidates accurately — not to make them feel good. "
+          + "You have seen hundreds of interviews. You know exactly what a wrong answer looks like versus a correct one. "
+          + "You NEVER inflate scores. A wrong answer is a wrong answer regardless of how confidently it was said. "
+          + "You use the full 0–100 range. Weak answers get low scores. Only strong answers get high scores. "
+          + "Return only valid JSON.";
+
+      try {
+        String raw = callGeminiWithTemp(sb.toString(), systemPrompt, 0.1, // very low temp — deterministic, strict
+                                                                          // scoring
+            userId, interviewId, "score_calculation");
+        return parseJsonObjectOrThrow(raw);
+      } catch (GeminiQuotaException | GeminiUnavailableException e) {
+        log.warn("Gemini unavailable while scoring: {}", e.getMessage());
+        throw e;
+      }
     }
 
     // ── Interviewer System Prompt Builder ──

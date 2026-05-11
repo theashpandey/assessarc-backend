@@ -220,6 +220,7 @@ public class InterviewService {
                                 .description(description)
                                 .testCases(testCases)
                                 .build();
+                        builder.question(cleanCodingQuestionText(text, description));
                         builder.codingData(codingData);
                     }
                 } catch (Exception e) {
@@ -331,6 +332,24 @@ public class InterviewService {
 
     private String textValue(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private String cleanCodingQuestionText(String question, String description) {
+        String text = question == null ? "" : question.trim();
+        if (text.isBlank()) return description == null ? "Solve the coding problem." : firstSentence(description);
+        String cleaned = text
+                .replaceFirst("(?is)\\s*(problem\\s*description|description|expected\\s*output|test\\s*cases?|examples?)\\s*:.*$", "")
+                .trim();
+        if (!cleaned.isBlank()) return cleaned;
+        return description == null || description.isBlank() ? firstSentence(text) : firstSentence(description);
+    }
+
+    private String firstSentence(String text) {
+        if (text == null || text.isBlank()) return "Solve the coding problem.";
+        String compact = text.replaceAll("\\s+", " ").trim();
+        int end = compact.indexOf('.');
+        if (end > 12) return compact.substring(0, end + 1);
+        return compact.length() > 140 ? compact.substring(0, 140).trim() + "..." : compact;
     }
 
     private String normalizeDifficulty(String difficulty) {
