@@ -908,6 +908,7 @@ public class InterviewService {
                                 .category(q.getCategory())
                                 .difficulty(q.getDifficulty())
                                 .type(q.getType() != null ? q.getType() : "text")
+                                .codingData(toDtoCodingData(q.getCodingData()))
                                 .answer(q.getAnswer() != null ? q.getAnswer() : "")
                                 .feedback(q.getFeedback() != null ? q.getFeedback() : "")
                                 .codingSubmission(toCodingSubmissionDetail(q.getCodingSubmission()))

@@ -1043,23 +1043,23 @@ public class GeminiService {
       sb.append("=== SCORING RUBRIC (MANDATORY — READ BEFORE SCORING) ===\n\n");
       sb.append("Score range is 0–100. Use the FULL range. These are HARD anchors — match them exactly:\n\n");
 
-      sb.append("0–15  → No answer, completely wrong, or total nonsense. Candidate had no idea.\n");
+      sb.append("0  → No answer, completely wrong, or total nonsense. Candidate had no idea.\n");
       sb.append(
-          "16–30 → Very weak. Candidate showed a vague or incorrect understanding. Major gaps. Buzzwords without substance.\n");
+          "0–15 → Very weak. Candidate showed a vague or incorrect understanding. Major gaps. Buzzwords without substance.\n");
       sb.append(
-          "31–45 → Below average. Partial understanding but significant gaps or confusion. Would NOT pass a real interview screening.\n");
+          "15–30 → Below average. Partial understanding but significant gaps or confusion. Would NOT pass a real interview screening.\n");
       sb.append(
-          "46–60 → Average. Some correct points but incomplete, missing key concepts, or lacking depth. Borderline pass.\n");
+          "30–45 → Average. Some correct points but incomplete, missing key concepts, or lacking depth. Borderline pass.\n");
       sb.append(
-          "61–75 → Good. Correct understanding, reasonable depth. Minor gaps. Would likely pass a real interview round.\n");
-      sb.append("76–88 → Strong. Clear, accurate, well-reasoned answer. Covers the key points confidently.\n");
+          "45–60 → Good. Correct understanding, reasonable depth. Minor gaps. Would likely pass a real interview round.\n");
+      sb.append("60–88 → Strong. Clear, accurate, well-reasoned answer. Covers the key points confidently.\n");
       sb.append(
           "89–100 → Exceptional. Deep insight, nuance, tradeoffs, real-world awareness. Rare — only for truly outstanding answers.\n\n");
 
       sb.append("CRITICAL RULES:\n");
       sb.append(
-          "- If the answer is wrong direction, off-topic, or misunderstands the question → score MUST be below 10.\n");
-      sb.append("- If the answer is partially correct but missing the core concept → score MUST be below 30.\n");
+          "- If the answer is wrong direction, off-topic, or misunderstands the question → score MUST be below 1.\n");
+      sb.append("- If the answer is partially correct but missing the core concept → score MUST be below 15.\n");
       sb.append("- If the candidate says 'I don't know' or gives a very vague guess → score MUST be below 0.\n");
       sb.append("- Do NOT reward effort, length, or confidence if the content is wrong.\n");
       sb.append("- Do NOT assume the candidate meant something correct if they said something wrong.\n");

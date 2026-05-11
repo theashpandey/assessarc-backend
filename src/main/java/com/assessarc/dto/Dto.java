@@ -333,6 +333,7 @@ public class Dto {
         private String category;
         private String difficulty;
         private String type;
+        private CodingQuestionData codingData;
         private String answer;
         private String feedback;
         private CodingSubmissionDetail codingSubmission;
