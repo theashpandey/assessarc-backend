@@ -5,12 +5,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.assessarc.config.AppProperties;
 import com.assessarc.model.GeminiUsageLog;
 import com.assessarc.repository.GeminiUsageRepository;
+import com.google.auth.oauth2.GoogleCredentials;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -26,8 +32,10 @@ public class GeminiService {
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
     private final GeminiUsageRepository geminiUsageRepository;
+    private volatile GoogleCredentials vertexCredentials;
 
     private static final String DEFAULT_ROLE = "software_engineer";
+    private static final List<String> VERTEX_SCOPES = List.of("https://www.googleapis.com/auth/cloud-platform");
     private static final ZoneId USAGE_ZONE = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter DAY_FMT = DateTimeFormatter.ISO_LOCAL_DATE.withZone(USAGE_ZONE);
     private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM").withZone(USAGE_ZONE);
@@ -194,9 +202,12 @@ public class GeminiService {
                                      String userId, String interviewId, String callType) {
         boolean usageRecorded = false;
         try {
-            String apiKey = props.getGemini().getApiKey();
-            if (apiKey == null || apiKey.isBlank()) {
-                throw new GeminiUnavailableException("AI service is not configured");
+            AppProperties.Vertex vertex = props.getGemini().getVertex();
+            if (vertex == null || !vertex.isEnabled()) {
+                throw new GeminiUnavailableException("Vertex AI service is not enabled");
+            }
+            if (vertex.getProjectId() == null || vertex.getProjectId().isBlank()) {
+                throw new GeminiUnavailableException("Vertex AI project id is not configured");
             }
 
             var contents = new ArrayList<Map<String, Object>>();
@@ -219,16 +230,36 @@ public class GeminiService {
                     )
             );
 
-            String url = props.getGemini().getUrl() + "?key=" + apiKey;
+            String url = vertexGenerateContentUrl(vertex);
+            String accessToken = vertexAccessToken(vertex);
 
             String responseStr = webClientBuilder.build()
                     .post().uri(url)
                     .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + accessToken)
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(String.class)
                     .timeout(Duration.ofSeconds(45))
                     .block();
+
+            /*
+             * Previous direct Gemini API transport kept for rollback/reference only.
+             *
+             * String apiKey = props.getGemini().getApiKey();
+             * if (apiKey == null || apiKey.isBlank()) {
+             *     throw new GeminiUnavailableException("AI service is not configured");
+             * }
+             * String url = props.getGemini().getUrl() + "?key=" + apiKey;
+             * String responseStr = webClientBuilder.build()
+             *         .post().uri(url)
+             *         .header("Content-Type", "application/json")
+             *         .bodyValue(body)
+             *         .retrieve()
+             *         .bodyToMono(String.class)
+             *         .timeout(Duration.ofSeconds(45))
+             *         .block();
+             */
 
             var json = objectMapper.readTree(responseStr);
 
@@ -1195,6 +1226,61 @@ public class GeminiService {
     }
 
     // ── Utilities ──
+
+    private String vertexGenerateContentUrl(AppProperties.Vertex vertex) {
+        String location = trimOrDefault(vertex.getLocation(), "us-central1");
+        String projectId = vertex.getProjectId().trim();
+        String model = trimOrDefault(vertex.getModel(), "gemini-2.5-flash-lite");
+        return "https://" + location + "-aiplatform.googleapis.com/v1/projects/" +
+                projectId + "/locations/" + location +
+                "/publishers/google/models/" + model + ":generateContent";
+    }
+
+    private String vertexAccessToken(AppProperties.Vertex vertex) {
+        try {
+            GoogleCredentials credentials = getVertexCredentials(vertex);
+            credentials.refreshIfExpired();
+            if (credentials.getAccessToken() == null) {
+                credentials.refresh();
+            }
+            return credentials.getAccessToken().getTokenValue();
+        } catch (IOException e) {
+            log.error("Unable to load Vertex AI credentials: {}", sanitizeSecret(e.getMessage()));
+            throw new GeminiUnavailableException("Vertex AI credentials are not configured correctly.");
+        }
+    }
+
+    private GoogleCredentials getVertexCredentials(AppProperties.Vertex vertex) throws IOException {
+        GoogleCredentials credentials = vertexCredentials;
+        if (credentials != null) {
+            return credentials;
+        }
+        synchronized (this) {
+            if (vertexCredentials == null) {
+                String credentialsPath = vertex.getCredentialsPath();
+                if (credentialsPath == null || credentialsPath.isBlank()) {
+                    vertexCredentials = GoogleCredentials.getApplicationDefault().createScoped(VERTEX_SCOPES);
+                } else {
+                    try (InputStream in = Files.newInputStream(resolveCredentialPath(credentialsPath))) {
+                        vertexCredentials = GoogleCredentials.fromStream(in).createScoped(VERTEX_SCOPES);
+                    }
+                }
+            }
+            return vertexCredentials;
+        }
+    }
+
+    private Path resolveCredentialPath(String credentialsPath) {
+        String trimmed = credentialsPath.trim();
+        if (trimmed.startsWith("file:")) {
+            return Path.of(URI.create(trimmed));
+        }
+        return Path.of(trimmed);
+    }
+
+    private String trimOrDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
 
     private boolean isQuotaStatus(int status) {
         return status == 429;

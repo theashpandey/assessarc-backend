@@ -17,8 +17,15 @@ spring:
 # ── AssessArc Config ──
 assessarc:
   gemini:
-    api-key: ${GEMINI_API_KEYS}
-    url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent
+    # Previous direct Gemini API configuration kept for rollback/reference:
+    # api-key: ${GEMINI_API_KEYS}
+    # url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent
+    vertex:
+      enabled: true
+      project-id: ${VERTEX_AI_PROJECT_ID}
+      location: ${VERTEX_AI_LOCATION}
+      model: ${VERTEX_AI_MODEL}
+      credentials-path: ${GOOGLE_APPLICATION_CREDENTIALS}
 
   firebase:
     service-account-path: file:/etc/secrets/firebase-service-account.json

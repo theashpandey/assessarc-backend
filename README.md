@@ -371,7 +371,7 @@ Answers → AI Feedback → Performance Analytics
 - Maven 3.6+
 - Firebase project with Firestore
 - Razorpay account
-- Google Gemini API key
+- Google Cloud project with Vertex AI enabled
 
 ### Backend Setup
 ```bash
@@ -380,7 +380,10 @@ git clone https://github.com/yourusername/assessarc-backend.git
 cd assessarc-backend
 
 # Configure environment variables
-export GEMINI_API_KEYS=your_gemini_api_key
+export VERTEX_AI_PROJECT_ID=your_google_cloud_project_id
+export VERTEX_AI_LOCATION=us-central1
+export VERTEX_AI_MODEL=gemini-2.5-flash-lite
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/vertex-ai-service-account.json
 export FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json
 export RAZORPAY_KEY_ID=your_razorpay_key
 export RAZORPAY_KEY_SECRET=your_razorpay_secret
@@ -412,7 +415,14 @@ npm start
 # application.yml
 assessarc:
   gemini:
-    api-key: ${GEMINI_API_KEYS}
+    # Previous direct Gemini API config is no longer required:
+    # api-key: ${GEMINI_API_KEYS}
+    vertex:
+      enabled: true
+      project-id: ${VERTEX_AI_PROJECT_ID}
+      location: ${VERTEX_AI_LOCATION:us-central1}
+      model: ${VERTEX_AI_MODEL:gemini-2.5-flash-lite}
+      credentials-path: ${GOOGLE_APPLICATION_CREDENTIALS:}
   firebase:
     service-account-path: file:/etc/secrets/firebase-service-account.json
   razorpay:
@@ -420,6 +430,20 @@ assessarc:
     key-secret: ${RAZORPAY_KEY_SECRET:}
     account-number: ${RAZORPAY_ACCOUNT_NUMBER:}
 ```
+
+### Vertex AI Production Setup
+1. In Google Cloud, select the project that has your credits/billing attached.
+2. Enable the **Vertex AI API** for that project.
+3. Create a service account, for example `assessarc-vertex-ai`.
+4. Grant it `Vertex AI User` (`roles/aiplatform.user`). If you want the same service account to read other Google Cloud resources later, add only the extra roles you actually need.
+5. Create a JSON key for that service account and store it as a private deploy secret file, not in Git.
+6. Set backend environment variables:
+   - `VERTEX_AI_PROJECT_ID=your_google_cloud_project_id`
+   - `VERTEX_AI_LOCATION=us-central1`
+   - `VERTEX_AI_MODEL=gemini-2.5-flash-lite`
+   - `GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/vertex-ai-service-account.json`
+7. Keep `GEMINI_API_KEYS` unset for production. It is only kept in comments as rollback reference.
+8. Deploy, then start one interview and check the admin Gemini monitoring page for successful token usage logs.
 
 ---
 
@@ -558,8 +582,14 @@ services:
     buildCommand: mvn clean package -DskipTests
     startCommand: java -jar target/*.jar
     envVars:
-      - key: GEMINI_API_KEYS
-        value: your_gemini_key
+      - key: VERTEX_AI_PROJECT_ID
+        value: your_google_cloud_project_id
+      - key: VERTEX_AI_LOCATION
+        value: us-central1
+      - key: VERTEX_AI_MODEL
+        value: gemini-2.5-flash-lite
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/vertex-ai-service-account.json
       - key: FIREBASE_SERVICE_ACCOUNT
         value: your_firebase_config
 ```
@@ -579,7 +609,10 @@ services:
 ### Environment Variables
 ```bash
 # Backend
-GEMINI_API_KEYS=your_gemini_api_keys
+VERTEX_AI_PROJECT_ID=your_google_cloud_project_id
+VERTEX_AI_LOCATION=us-central1
+VERTEX_AI_MODEL=gemini-2.5-flash-lite
+GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/vertex-ai-service-account.json
 FIREBASE_SERVICE_ACCOUNT_PATH=/etc/secrets/service-account.json
 RAZORPAY_KEY_ID=rzp_live_xxx
 RAZORPAY_KEY_SECRET=your_secret
