@@ -471,7 +471,7 @@ public class GeminiService {
                 "Allowed categories: %s\n\n" +
                 "%s\n\n" +
                 "IMPORTANT — QUESTION QUALITY RULES:\n" +
-                "- Include trending, most-asked questions from top tech companies (Google, Amazon, Microsoft, Flipkart, etc.) relevant to this role and experience level.\n" +
+                "- 40% Include trending, most-asked questions from top tech companies Google, Amazon, Microsoft, Flipkart, Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. relevant to this role and experience level.\n" +
                 "- Each question must sound like a real human interviewer saying it out loud — natural, conversational, not robotic.\n" +
                 "- Mix question types: fundamentals, tricky/gotcha, scenario-based, resume/project-based, and behavioral — as per the bucket distribution above.\n" +
                 "- DO NOT mention 'resume', 'your profile', 'as per your CV' directly in the question text.\n" +
