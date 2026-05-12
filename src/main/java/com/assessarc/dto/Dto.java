@@ -503,6 +503,8 @@ public class Dto {
         private int avgScore;
         private int bestScore;
         private String trend; // "improving" | "declining" | "neutral"
+        private boolean cached;
+        private long generatedAt;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor

@@ -4,11 +4,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.assessarc.dto.Dto;
 import com.assessarc.model.Interview;
+import com.assessarc.model.PerformanceAnalysisCache;
 import com.assessarc.repository.InterviewRepository;
+import com.assessarc.repository.PerformanceAnalysisCacheRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -28,7 +33,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PerformanceAnalysisService {
 
+    private static final String CACHE_VERSION = "performance-analysis-v1";
+
     private final InterviewRepository interviewRepository;
+    private final PerformanceAnalysisCacheRepository cacheRepository;
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper;
 
@@ -41,6 +49,20 @@ public class PerformanceAnalysisService {
 
         if (last7.isEmpty()) {
             return buildEmptyStateResponse();
+        }
+
+        String fingerprint = buildAnalysisFingerprint(last7);
+        Optional<PerformanceAnalysisCache> cached = cacheRepository.findByUserId(uid);
+        if (cached.isPresent()
+                && fingerprint.equals(cached.get().getFingerprint())
+                && cached.get().getAnalysis() != null) {
+            log.info("Returning cached performance analysis for user {} fingerprint={}", uid, fingerprint);
+            Dto.PerformanceAnalysisResponse response = cached.get().getAnalysis();
+            response.setCached(true);
+            if (response.getGeneratedAt() == 0) {
+                response.setGeneratedAt(cached.get().getGeneratedAt());
+            }
+            return response;
         }
 
         // Calculate aggregate stats
@@ -92,12 +114,73 @@ public class PerformanceAnalysisService {
             
             // Validate score-verdict alignment before returning
             response = validateAndFixAlignment(response, avgScore);
+
+            saveCache(uid, fingerprint, last7, response);
             
             return response;
         } catch (Exception e) {
             log.error("Analysis generation failed: {}", e.getMessage(), e);
             return buildFallbackAnalysis(last7, avgScore, bestScore, trend, categoryAverages);
         }
+    }
+
+    private void saveCache(String uid, String fingerprint, List<Interview> interviews,
+                           Dto.PerformanceAnalysisResponse response) {
+        long now = System.currentTimeMillis();
+        response.setCached(false);
+        response.setGeneratedAt(now);
+        cacheRepository.save(PerformanceAnalysisCache.builder()
+                .userId(uid)
+                .fingerprint(fingerprint)
+                .interviewIds(interviews.stream().map(Interview::getId).toList())
+                .analysis(response)
+                .generatedAt(now)
+                .updatedAt(now)
+                .build());
+        log.info("Saved performance analysis cache for user {} fingerprint={}", uid, fingerprint);
+    }
+
+    private String buildAnalysisFingerprint(List<Interview> interviews) {
+        String raw = CACHE_VERSION + "|" + interviews.stream()
+                .map(this::fingerprintPart)
+                .collect(Collectors.joining("|"));
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
+    }
+
+    private String fingerprintPart(Interview interview) {
+        Interview.Scores scores = interview.getScores();
+        String categoryScores = "";
+        if (scores != null && scores.getCategories() != null) {
+            categoryScores = scores.getCategories().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                    .collect(Collectors.joining(","));
+        }
+        return String.join(":",
+                nullToEmpty(interview.getId()),
+                String.valueOf(interview.getCompletedAt()),
+                nullToEmpty(interview.getInterviewRole()),
+                nullToEmpty(interview.getExperienceLevel()),
+                String.valueOf(scores != null ? scores.getOverall() : 0),
+                String.valueOf(scores != null ? scores.getTechnical() : 0),
+                String.valueOf(scores != null ? scores.getCommunication() : 0),
+                String.valueOf(scores != null ? scores.getProblemSolving() : 0),
+                String.valueOf(scores != null ? scores.getRoleDepth() : 0),
+                categoryScores);
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     /**
