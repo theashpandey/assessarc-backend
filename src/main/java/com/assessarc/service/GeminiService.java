@@ -347,7 +347,7 @@ public class GeminiService {
 
                 Category rules:
                 - categories must be lower_snake_case
-                - Choose 4 to 6 interview categories
+                - Choose 6 to 10 interview categories
                 - Categories MUST reflect the candidate's actual specific technical skills from the resume.
                   For example: if resume has Spring Boot → use "spring_boot"; has React → use "react";
                   has Kafka → use "kafka"; has AWS → use "aws"; has Docker/Kubernetes → use "kubernetes";
@@ -426,13 +426,13 @@ public class GeminiService {
             if (durationMinutes == 30) {
                 codingCount = 1;
                 codingInstructions = "Include exactly 1 CODING question (difficulty: easy). " +
-                        "Make it a real, trending coding question asked in top tech company interviews — not a trivial print statement.";
+                        "Make it a real, trending most-asked coding question asked in top tech company(like Google, Amazon, and Microsoft, Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc) interviews — not a trivial print statement.";
             } else if (durationMinutes == 60) {
                 codingCount = 2;
-                codingInstructions = "Include exactly 2 CODING questions. " +
+                codingInstructions = "Include trending most-asked exactly 2 CODING questions. " +
                         "First: easy — a common interview coding question. " +
                         "Second: medium — a more realistic problem that tests algorithmic thinking. " +
-                        "Both should reflect trending questions asked at companies like Google, Amazon, and Microsoft.";
+                        "Both should reflect trending questions asked at companies like Google, Amazon, and Microsoft, Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc.";
             }
         }
         int textCount = count - codingCount;
