@@ -138,11 +138,22 @@ public class GeminiService {
         return FRESHER_LEVELS.contains(normalizeExperience(experienceLevel));
     }
 
+
     public boolean roleRequiresCoding(String role) {
-        String normalized = normalizeRole(role);
-        return Set.of("java_developer", "python_developer", "react_developer", "full_stack_developer",
-                      "backend_engineer", "frontend_engineer", "software_engineer").contains(normalized);
-    }
+      String normalized = normalizeRole(role);
+      return Set.of(
+          "java_developer",
+          "python_developer",
+          "react_developer",
+          "full_stack_developer",
+          "backend_engineer",
+          "frontend_engineer",
+          "software_engineer",
+          "data_scientist",      // added
+          "data_engineer",       // added
+          "mobile_developer"     // added
+      ).contains(normalized);
+  }
 
     public List<String> categoriesForRole(String role) {
         LinkedHashSet<String> categories = new LinkedHashSet<>(COMMON_CATEGORIES);
@@ -471,7 +482,7 @@ public class GeminiService {
                 "Allowed categories: %s\n\n" +
                 "%s\n\n" +
                 "IMPORTANT — QUESTION QUALITY RULES:\n" +
-                "- 40% Include trending, most-asked questions from top tech companies Google, Amazon, Microsoft, Flipkart, Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. relevant to this role and experience level.\n" +
+                "- Include 40 percent trending, most-asked questions from top tech companies Google, Amazon, Microsoft, Flipkart, Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. relevant to this role and experience level.\n" +
                 "- Each question must sound like a real human interviewer saying it out loud — natural, conversational, not robotic.\n" +
                 "- Mix question types: fundamentals, tricky/gotcha, scenario-based, resume/project-based, and behavioral — as per the bucket distribution above.\n" +
                 "- DO NOT mention 'resume', 'your profile', 'as per your CV' directly in the question text.\n" +
@@ -975,7 +986,7 @@ public class GeminiService {
             case "react_developer", "frontend_engineer"                     -> "javascript";
             case "full_stack_developer"                                      -> "javascript";
             case "mobile_developer"                                          -> "kotlin";
-            default                                                          -> "java";
+            default                                                          -> "";
         };
     }
 
