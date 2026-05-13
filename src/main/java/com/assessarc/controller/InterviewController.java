@@ -1,14 +1,22 @@
 package com.assessarc.controller;
 
-import com.assessarc.dto.Dto;
-import com.assessarc.service.InterviewService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.util.List;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
+import com.assessarc.dto.Dto;
+import com.assessarc.service.InterviewService;
+import com.assessarc.service.SingleInterviewAnalysisService;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RestController
@@ -17,7 +25,7 @@ import java.util.List;
 public class InterviewController {
 
     private final InterviewService interviewService;
-
+    private final SingleInterviewAnalysisService singleAnalysisService;
     @PostMapping("/start")
     public ResponseEntity<Dto.StartInterviewResponse> start(
             Authentication auth,
@@ -103,6 +111,6 @@ public class InterviewController {
             Authentication auth,
             @PathVariable String id) {
         String uid = (String) auth.getPrincipal();
-        return ResponseEntity.ok(interviewService.getDetailAnalysis(uid, id));
+        return ResponseEntity.ok(singleAnalysisService.getDetailAnalysis(uid, id));
     }
 }

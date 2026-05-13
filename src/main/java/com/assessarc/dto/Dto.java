@@ -29,7 +29,26 @@ public class Dto {
         private String referralCode;
         private boolean isAdmin;
     }
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SingleInterviewAnalysis {
 
+      private String overallAnalysis;
+
+      private String communicationAnalysis;
+
+      private String answeringFlowAnalysis;
+
+      private String strengthsSummary;
+
+      private String improvementPlan;
+
+      private String interviewerVerdict;
+
+      private String nextInterviewFocus;
+    }
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class UserProfileResponse {
         private String uid;
