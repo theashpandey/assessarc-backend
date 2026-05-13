@@ -929,8 +929,177 @@ public class InterviewService {
                 .questions(qaList)
                 .build();
     }
-
     public Dto.PerformanceAnalysisResponse getDetailAnalysis(String uid, String interviewId) {
+      Interview interview = interviewRepository.findById(interviewId)
+              .orElseThrow(() -> new RuntimeException("Interview not found"));
+      if (!interview.getUserId().equals(uid)) throw new RuntimeException("Unauthorized");
+      if (interview.getAnalysis() != null) {
+          return toAnalysisResponse(interview.getAnalysis(),
+                  interview.getScores() != null ? interview.getScores().getOverall() : 0);
+      }
+
+      List<Interview.QuestionAnswer> qas = interview.getQuestions() != null
+              ? interview.getQuestions() : List.of();
+      if (qas.isEmpty()) {
+          return buildSingleInterviewFallback(interview, "No questions were found for this interview.");
+      }
+
+      int score = interview.getScores() != null ? interview.getScores().getOverall() : 0;
+
+      // ── Build rich context ──────────────────────────────────────────────────
+      StringBuilder context = new StringBuilder();
+      context.append("SINGLE SESSION INTERVIEW DATA\n");
+      context.append("==============================\n\n");
+      context.append("Role: ").append(geminiService.roleLabel(interview.getInterviewRole())).append("\n");
+      context.append("Experience Level: ").append(geminiService.experienceLabel(interview.getExperienceLevel())).append("\n");
+
+      if (interview.getScores() != null) {
+          context.append("Scores — Overall: ").append(score).append("%, ");
+          context.append("Technical: ").append(interview.getScores().getTechnical()).append("%, ");
+          context.append("Communication: ").append(interview.getScores().getCommunication()).append("%, ");
+          context.append("Problem Solving: ").append(interview.getScores().getProblemSolving()).append("%\n\n");
+      }
+
+      context.append("QUESTIONS & ANSWERS:\n");
+      context.append("====================\n\n");
+      for (Interview.QuestionAnswer q : qas) {
+          context.append("Q [").append(q.getCategory()).append("]: ").append(q.getQuestion()).append("\n");
+          if ("coding".equals(q.getType()) && q.getCodingSubmission() != null) {
+              context.append("Language: ").append(q.getCodingSubmission().getLanguage()).append("\n");
+              context.append("Code Score: ").append(q.getCodingSubmission().getScore()).append("/100\n");
+              context.append("Code Evaluation: ").append(q.getCodingSubmission().getAiEvaluation()).append("\n");
+          } else {
+              String answer = q.getAnswer() == null || q.getAnswer().isBlank()
+                      ? "(no answer)" : q.getAnswer().trim();
+              context.append("A: ").append(answer).append("\n");
+          }
+          if (q.getFeedback() != null && !q.getFeedback().isBlank()) {
+              context.append("Live feedback: ").append(q.getFeedback()).append("\n");
+          }
+          context.append("\n");
+      }
+
+      // ── System prompt ───────────────────────────────────────────────────────
+      String systemPrompt =
+              "You are Sarah, a senior interviewer with 15+ years of hiring across all levels. " +
+              "You just finished interviewing this candidate and are giving them direct post-interview feedback.\n\n" +
+
+              "TONE REQUIREMENTS:\n" +
+              "- Always say 'you' and 'your' — never say 'the candidate'\n" +
+              "- Be honest but encouraging — name real gaps without being discouraging\n" +
+              "- Reference their actual answers specifically — no generic advice that could apply to anyone\n" +
+              "- Sound like a real person talking after an interview, not a corporate performance review\n" +
+              "- Warm and professional — like someone who genuinely wants them to succeed\n\n" +
+
+              "CRITICAL CONSTRAINTS:\n" +
+              "- Verdict MUST match the score:\n" +
+              "  • 75%+ = STRONG HIRE\n" +
+              "  • 45–74% = HIRE WITH COACHING\n" +
+              "  • 30–44% = NOT YET\n" +
+              "  • <30% = REJECT\n" +
+              "- Only mention strengths that are actually visible in their answers — never invent them\n" +
+              "- Improvement areas must be specific and time-bound — not vague like 'practice more'\n" +
+              "- Distinguish between knowledge gaps, communication gaps, and confidence issues\n\n" +
+
+              "DO NOT:\n" +
+              "- Use bullet points, numbered lists, or markdown in any field value\n" +
+              "- Wrap any response in square brackets [ ]\n" +
+              "- Use placeholder text or instructions as the value — write the actual feedback\n" +
+              "- Use jargon like 'leverage', 'synergize', or 'deep-dive'\n" +
+              "- Contradict yourself between fields — score, strengths, and verdict must all align\n\n" +
+
+              "OUTPUT RULES:\n" +
+              "- Return ONLY valid JSON — no markdown, no preamble, no explanation outside the JSON\n" +
+              "- Every field value must be flowing prose — never an array, never a bracketed placeholder\n" +
+              "- Fill every field with real, specific feedback based on this candidate's actual answers";
+
+      // ── User prompt ─────────────────────────────────────────────────────────
+      String userPrompt = context +
+              "\n\n=== YOUR FEEDBACK TASK ===\n" +
+              "You just interviewed this person. Give them real, specific post-interview feedback.\n" +
+              "Reference what they actually said. Be honest about gaps. Acknowledge genuine strengths.\n\n" +
+
+              "FIELD INSTRUCTIONS:\n" +
+              "- overallAnalysis: 3-4 sentences on how this session went. Reference their actual answers.\n" +
+              "- communicationAnalysis: 2-3 sentences on clarity, confidence, and how easy they were to follow. Give examples.\n" +
+              "- answeringFlowAnalysis: 2-3 sentences on structure — did they get to the point or ramble? Use evidence.\n" +
+              "- strengthsSummary: 2-3 sentences on real strengths from this session. Specific, not generic.\n" +
+              "- improvementPlan: 3 actionable, time-bound things to work on. Written as natural sentences, not a list.\n" +
+              "- interviewerVerdict: Start with the verdict label (STRONG HIRE / HIRE WITH COACHING / NOT YET / REJECT), then 1-2 sentences of honest reasoning. Must match the score.\n\n" +
+
+              "Return ONLY this JSON. All values must be plain prose strings — no brackets, no arrays, no markdown:\n" +
+              "{\n" +
+              "  \"overallAnalysis\": \"\",\n" +
+              "  \"communicationAnalysis\": \"\",\n" +
+              "  \"answeringFlowAnalysis\": \"\",\n" +
+              "  \"strengthsSummary\": \"\",\n" +
+              "  \"improvementPlan\": \"\",\n" +
+              "  \"interviewerVerdict\": \"\"\n" +
+              "}\n";
+
+      // ── Call Gemini + parse ─────────────────────────────────────────────────
+      try {
+          Map<String, Object> raw = geminiService.parseJsonObjectOrThrow(
+                  geminiService.callGeminiWithTemp(userPrompt, systemPrompt, 0.55,
+                          uid, interviewId, "single_interview_analysis"));
+
+          Interview.Analysis analysis = Interview.Analysis.builder()
+                  .overallAnalysis(extractString(raw, "overallAnalysis"))
+                  .communicationAnalysis(extractString(raw, "communicationAnalysis"))
+                  .answeringFlowAnalysis(extractString(raw, "answeringFlowAnalysis"))
+                  .strengthsSummary(extractString(raw, "strengthsSummary"))
+                  .improvementPlan(extractString(raw, "improvementPlan"))
+                  .interviewerVerdict(alignVerdict(extractString(raw, "interviewerVerdict"), score))
+                  .generatedAt(System.currentTimeMillis())
+                  .build();
+
+          interviewRepository.updateAnalysis(interviewId, analysis);
+          return toAnalysisResponse(analysis, score);
+
+      } catch (Exception e) {
+          log.error("Single interview analysis failed: {}", e.getMessage());
+          return buildSingleInterviewFallback(interview, "AI analysis is temporarily unavailable. Please try again.");
+      }
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private String extractString(Map<String, Object> map, String key) {
+      Object val = map.get(key);
+      if (val == null) return "";
+      if (val instanceof List<?> list) {
+          return list.stream().map(Object::toString).collect(Collectors.joining(" "));
+      }
+      return stripBrackets(val.toString().trim());
+  }
+
+  private String stripBrackets(String text) {
+      if (text == null || text.isBlank()) return text;
+      String t = text.trim();
+      if (t.startsWith("[") && t.endsWith("]")
+              && !t.matches("^\\[(?:STRONG HIRE|HIRE WITH COACHING|NOT YET|REJECT)\\].*")) {
+          t = t.substring(1, t.length() - 1).trim();
+      }
+      return t;
+  }
+
+  private String alignVerdict(String verdict, int score) {
+      String expected = score >= 75 ? "STRONG HIRE"
+                      : score >= 45 ? "HIRE WITH COACHING"
+                      : score >= 30 ? "NOT YET"
+                      : "REJECT";
+      if (verdict != null && verdict.toUpperCase().contains(expected)) return verdict;
+      log.warn("Verdict-score mismatch. Score: {}, Verdict: '{}'. Correcting to: {}", score, verdict, expected);
+      String reasoning = score >= 75
+              ? "Your technical knowledge and communication are solid. You're ready to contribute from day one."
+              : score >= 45
+              ? "You have the fundamentals. A few weeks of focused practice will get you to the next level."
+              : score >= 30
+              ? "You're still building. Come back after 8–12 weeks of focused study — this is coachable."
+              : "There are significant gaps right now. Take this feedback seriously and revisit in a few months.";
+      return expected + ": " + reasoning;
+  }
+    public Dto.PerformanceAnalysisResponse getDetailAnalysis111111111111(String uid, String interviewId) {
         Interview interview = interviewRepository.findById(interviewId)
                 .orElseThrow(() -> new RuntimeException("Interview not found"));
         if (!interview.getUserId().equals(uid)) throw new RuntimeException("Unauthorized");
