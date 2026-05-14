@@ -45,22 +45,53 @@ public class GeminiService {
 
     private static final Map<String, String> ROLE_LABELS = Map.ofEntries(
             Map.entry("software_engineer", "Software Engineer"),
+            Map.entry("ai_engineer", "AI Engineer"),
+            Map.entry("generative_ai_engineer", "Generative AI Engineer"),
+            Map.entry("machine_learning_engineer", "Machine Learning Engineer"),
             Map.entry("java_developer", "Java Developer"),
             Map.entry("python_developer", "Python Developer"),
+            Map.entry("dotnet_developer", ".NET Developer"),
+            Map.entry("csharp_developer", "C# Developer"),
+            Map.entry("nodejs_developer", "Node.js Developer"),
             Map.entry("react_developer", "React Developer"),
+            Map.entry("angular_developer", "Angular Developer"),
             Map.entry("full_stack_developer", "Full Stack Developer"),
             Map.entry("backend_engineer", "Backend Engineer"),
             Map.entry("frontend_engineer", "Frontend Engineer"),
             Map.entry("data_scientist", "Data Scientist"),
+            Map.entry("data_analyst", "Data Analyst"),
             Map.entry("data_engineer", "Data Engineer"),
+            Map.entry("sql_developer", "SQL Developer"),
+            Map.entry("business_analyst", "Business Analyst"),
             Map.entry("devops_engineer", "DevOps Engineer"),
             Map.entry("cloud_engineer", "Cloud Engineer"),
+            Map.entry("aws_engineer", "AWS Engineer"),
+            Map.entry("azure_engineer", "Azure Engineer"),
+            Map.entry("cybersecurity_analyst", "Cybersecurity Analyst"),
             Map.entry("qa_automation_engineer", "QA Automation Engineer"),
+            Map.entry("sdet", "SDET"),
             Map.entry("mobile_developer", "Mobile Developer"),
             Map.entry("software_architect", "Software Architect"),
             Map.entry("engineering_manager", "Engineering Manager"),
             Map.entry("product_manager", "Product Manager"),
+            Map.entry("prompt_engineer", "Prompt Engineer"),
+            Map.entry("ui_ux_designer", "UI/UX Designer"),
             Map.entry("hr_recruiter", "HR / Recruiter")
+    );
+
+    private static final Map<String, String> ROLE_ALIASES = Map.ofEntries(
+            Map.entry("net_developer", "dotnet_developer"),
+            Map.entry("dot_net_developer", "dotnet_developer"),
+            Map.entry("c_sharp_developer", "csharp_developer"),
+            Map.entry("c_developer", "csharp_developer"),
+            Map.entry("node_developer", "nodejs_developer"),
+            Map.entry("node_js_developer", "nodejs_developer"),
+            Map.entry("uiux_designer", "ui_ux_designer"),
+            Map.entry("ux_ui_designer", "ui_ux_designer"),
+            Map.entry("security_analyst", "cybersecurity_analyst"),
+            Map.entry("cyber_security_analyst", "cybersecurity_analyst"),
+            Map.entry("ml_engineer", "machine_learning_engineer"),
+            Map.entry("gen_ai_engineer", "generative_ai_engineer")
     );
 
     private static final Map<String, String> EXPERIENCE_LABELS = Map.ofEntries(
@@ -80,21 +111,37 @@ public class GeminiService {
 
     private static final Map<String, List<String>> ROLE_CATEGORIES = Map.ofEntries(
             Map.entry("software_engineer",      List.of("programming", "api_design", "databases", "system_design", "testing", "debugging")),
+            Map.entry("ai_engineer",            List.of("python_core", "machine_learning", "ai_ml_systems", "llm_applications", "model_evaluation", "mlops")),
+            Map.entry("generative_ai_engineer", List.of("python_core", "generative_ai", "llm_applications", "prompt_engineering", "rag", "model_evaluation")),
+            Map.entry("machine_learning_engineer", List.of("python_core", "machine_learning", "model_evaluation", "mlops", "data_modeling", "system_design")),
             Map.entry("java_developer",         List.of("java_core", "oops", "multithreading", "spring", "microservices", "system_design")),
             Map.entry("python_developer",       List.of("python_core", "oops", "django_fastapi", "api_design", "databases", "testing")),
+            Map.entry("dotnet_developer",       List.of("dotnet", "csharp", "api_design", "databases", "system_design", "testing")),
+            Map.entry("csharp_developer",       List.of("csharp", "dotnet", "oops", "api_design", "databases", "testing")),
+            Map.entry("nodejs_developer",       List.of("nodejs", "javascript", "api_design", "databases", "async_programming", "testing")),
             Map.entry("react_developer",        List.of("javascript", "react", "frontend_architecture", "testing", "api_design", "performance")),
+            Map.entry("angular_developer",      List.of("javascript", "angular", "frontend_architecture", "rxjs", "testing", "performance")),
             Map.entry("full_stack_developer",   List.of("javascript", "react", "api_design", "databases", "system_design", "cloud_devops")),
             Map.entry("backend_engineer",       List.of("api_design", "databases", "microservices", "system_design", "testing", "cloud_devops")),
             Map.entry("frontend_engineer",      List.of("javascript", "react", "frontend_architecture", "testing", "performance", "accessibility")),
             Map.entry("data_scientist",         List.of("python_core", "statistics", "machine_learning", "sql", "data_modeling", "experimentation")),
+            Map.entry("data_analyst",           List.of("sql", "statistics", "analytics", "business_intelligence", "data_visualization", "experimentation")),
             Map.entry("data_engineer",          List.of("python_core", "sql", "data_modeling", "distributed_systems", "cloud_devops", "data_quality")),
+            Map.entry("sql_developer",          List.of("sql", "databases", "query_optimization", "stored_procedures", "data_modeling", "performance")),
+            Map.entry("business_analyst",       List.of("requirements_analysis", "business_intelligence", "process_modeling", "stakeholder_management", "metrics", "communication")),
             Map.entry("devops_engineer",        List.of("linux", "ci_cd", "cloud_devops", "kubernetes", "observability", "security")),
             Map.entry("cloud_engineer",         List.of("cloud_devops", "system_design", "networking", "security", "kubernetes", "cost_optimization")),
+            Map.entry("aws_engineer",           List.of("aws", "networking", "iam", "cloud_security", "kubernetes", "cost_optimization")),
+            Map.entry("azure_engineer",         List.of("azure", "networking", "iam", "cloud_security", "kubernetes", "cost_optimization")),
+            Map.entry("cybersecurity_analyst",  List.of("security", "threat_detection", "incident_response", "vulnerability_management", "networking", "cloud_security")),
             Map.entry("qa_automation_engineer", List.of("testing", "automation_frameworks", "api_testing", "ci_cd", "debugging", "quality_strategy")),
+            Map.entry("sdet",                   List.of("programming", "testing", "automation_frameworks", "api_testing", "ci_cd", "quality_strategy")),
             Map.entry("mobile_developer",       List.of("mobile_architecture", "ui_state", "api_design", "testing", "performance", "release_management")),
             Map.entry("software_architect",     List.of("architecture", "system_design", "microservices", "cloud_devops", "security", "leadership")),
             Map.entry("engineering_manager",    List.of("people_management", "leadership", "delivery", "hiring", "stakeholder_management", "technical_judgment")),
             Map.entry("product_manager",        List.of("product_strategy", "prioritization", "stakeholder_management", "metrics", "execution", "user_research")),
+            Map.entry("prompt_engineer",        List.of("prompt_engineering", "llm_applications", "model_evaluation", "generative_ai", "user_research", "communication")),
+            Map.entry("ui_ux_designer",         List.of("ux_research", "interaction_design", "design_systems", "prototyping", "accessibility", "user_research")),
             Map.entry("hr_recruiter",           List.of("hiring", "sourcing", "employee_relations", "communication", "process_management", "stakeholder_management"))
     );
 
@@ -104,14 +151,22 @@ public class GeminiService {
 
     public String normalizeRole(String role) {
         if (role == null || role.isBlank()) return DEFAULT_ROLE;
-        String normalized = role.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+        String normalized = normalizeRoleKey(role);
         return ROLE_CATEGORIES.containsKey(normalized) ? normalized : DEFAULT_ROLE;
     }
 
     public boolean isSupportedRole(String role) {
         if (role == null || role.isBlank()) return false;
-        String normalized = role.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+        String normalized = normalizeRoleKey(role);
         return ROLE_CATEGORIES.containsKey(normalized);
+    }
+
+    private String normalizeRoleKey(String role) {
+        String normalized = role.trim().toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_|_$", "");
+        return ROLE_ALIASES.getOrDefault(normalized, normalized);
     }
 
     public String normalizeExperience(String experience) {
@@ -149,9 +204,20 @@ public class GeminiService {
           "backend_engineer",
           "frontend_engineer",
           "software_engineer",
-          "data_scientist",      // added
-          "data_engineer",       // added
-          "mobile_developer"     // added
+          "ai_engineer",
+          "generative_ai_engineer",
+          "machine_learning_engineer",
+          "dotnet_developer",
+          "csharp_developer",
+          "nodejs_developer",
+          "angular_developer",
+          "data_scientist",
+          "data_analyst",
+          "data_engineer",
+          "sql_developer",
+          "qa_automation_engineer",
+          "sdet",
+          "mobile_developer"
       ).contains(normalized);
   }
 
@@ -624,6 +690,230 @@ public class GeminiService {
     private String getRoleBucketExamples(String role, boolean fresher) {
         return switch (role) {
 
+            case "ai_engineer" -> fresher ? """
+                FUNDAMENTALS: "How would you explain the difference between traditional software logic and an AI-powered feature?"
+                FUNDAMENTALS: "What does model evaluation mean, and why is accuracy alone often not enough?"
+                TRICKY: "If an AI feature works well in a demo but fails for real users, what are the first causes you would check?"
+                SCENARIO: "Imagine you're adding an AI assistant to a support app — what would you validate before shipping it?"
+                PROJECT: "Walk me through an AI project you tried — what data, model, or API did you use and why?"
+                BEHAVIORAL: "When an AI answer looks confident but suspicious, how do you decide whether to trust it?"
+                """ : """
+                FUNDAMENTALS: "How do you decide between using a hosted model API, fine-tuning, or building a classical ML model?"
+                FUNDAMENTALS: "What metrics and guardrails would you use before allowing an AI workflow into production?"
+                TRICKY: "A model's offline evaluation improves but product outcomes get worse — how do you investigate that gap?"
+                DESIGN: "How would you design an AI service that is observable, cost-controlled, and resilient to provider failures?"
+                PROJECT: "Tell me about an AI system you shipped or owned — what was the hardest production tradeoff?"
+                BEHAVIORAL: "Tell me about a time you had to push back on an unrealistic AI requirement."
+                """;
+
+            case "generative_ai_engineer" -> fresher ? """
+                FUNDAMENTALS: "What is the difference between prompting, RAG, and fine-tuning in a GenAI application?"
+                FUNDAMENTALS: "Why can LLMs hallucinate, and what practical steps reduce that risk?"
+                TRICKY: "If two similar prompts produce very different answers, what might be happening?"
+                SCENARIO: "Imagine you're building a resume Q&A bot — how would you ground answers in the uploaded document?"
+                PROJECT: "Walk me through a GenAI demo or project you built — what prompt or retrieval choices mattered most?"
+                BEHAVIORAL: "How do you test an LLM feature when outputs are not exactly the same every time?"
+                """ : """
+                FUNDAMENTALS: "How do chunking strategy, embeddings, and retrieval ranking affect the quality of a RAG system?"
+                FUNDAMENTALS: "How would you evaluate faithfulness, relevance, latency, and cost for an LLM workflow?"
+                TRICKY: "Your RAG system returns the right document but the answer is still wrong — where do you look next?"
+                DESIGN: "How would you design a multi-tenant enterprise GenAI assistant with access control and auditability?"
+                PROJECT: "Tell me about a GenAI failure you debugged — was the issue prompt, retrieval, model, or product design?"
+                BEHAVIORAL: "How do you explain GenAI limitations to stakeholders who expect deterministic software?"
+                """;
+
+            case "machine_learning_engineer" -> fresher ? """
+                FUNDAMENTALS: "What is the difference between training, validation, and test data — why do all three matter?"
+                FUNDAMENTALS: "How would you explain precision and recall using a fraud detection example?"
+                TRICKY: "If your model gets 99% accuracy on an imbalanced dataset, why might that be a bad sign?"
+                SCENARIO: "You trained a model in a notebook — what steps turn it into something an application can use?"
+                PROJECT: "Walk me through an ML project you built — what feature engineering or evaluation decision mattered most?"
+                BEHAVIORAL: "When a model performs poorly, how do you decide whether to improve data, features, or algorithm?"
+                """ : """
+                FUNDAMENTALS: "How do you design an ML training and serving pipeline that prevents training-serving skew?"
+                FUNDAMENTALS: "What drift signals do you monitor after a model goes live, and what action do they trigger?"
+                TRICKY: "A model performs well in batch validation but poorly for low-latency online requests — what could be wrong?"
+                DESIGN: "How would you design a feature store and deployment process for multiple ML models?"
+                PROJECT: "Tell me about an ML system you productionized — what broke after launch and how did you fix it?"
+                BEHAVIORAL: "Tell me about a time business constraints forced you to choose a simpler model."
+                """;
+
+            case "dotnet_developer", "csharp_developer" -> fresher ? """
+                FUNDAMENTALS: "What is the difference between value types and reference types in C#?"
+                FUNDAMENTALS: "How does async and await work in C# at a practical level?"
+                TRICKY: "What can go wrong if you block on an async call using .Result or .Wait()?"
+                SCENARIO: "Imagine you're building a simple Web API in .NET — how would you structure controllers, services, and data access?"
+                PROJECT: "Tell me about a C# or .NET project you built — what library or framework choice mattered?"
+                BEHAVIORAL: "When you hit a runtime exception in .NET, what's your debugging process?"
+                """ : """
+                FUNDAMENTALS: "How does dependency injection work in ASP.NET Core, and what lifetime mistakes cause production bugs?"
+                FUNDAMENTALS: "How do async streams, tasks, and thread-pool behavior affect throughput in a .NET API?"
+                TRICKY: "When can Entity Framework generate inefficient SQL, and how do you catch it before it hurts production?"
+                DESIGN: "How would you design a .NET service that handles high write volume while keeping APIs responsive?"
+                PROJECT: "Walk me through a production issue you debugged in a .NET application."
+                BEHAVIORAL: "Tell me about a time you refactored C# code without breaking existing behavior."
+                """;
+
+            case "nodejs_developer" -> fresher ? """
+                FUNDAMENTALS: "What is the Node.js event loop, and why does it matter for backend code?"
+                FUNDAMENTALS: "What's the difference between callbacks, promises, and async/await?"
+                TRICKY: "If one request runs a CPU-heavy loop in Node.js, what happens to other requests?"
+                SCENARIO: "You're building a REST API with Express — how would you handle validation and errors?"
+                PROJECT: "Walk me through a Node.js project you built — how did you structure routes and services?"
+                BEHAVIORAL: "When an npm package looks useful, how do you decide if it's safe to add?"
+                """ : """
+                FUNDAMENTALS: "How do you diagnose event-loop blocking in a Node.js production service?"
+                FUNDAMENTALS: "How do streams and backpressure work in Node.js?"
+                TRICKY: "A memory leak only appears after hours of traffic — how do you investigate it in Node?"
+                DESIGN: "How would you design a Node.js API that handles bursts, retries, and downstream failures?"
+                PROJECT: "Tell me about a Node service you owned — what scaling or reliability issue did you solve?"
+                BEHAVIORAL: "Tell me about a time dependency risk changed your implementation plan."
+                """;
+
+            case "angular_developer" -> fresher ? """
+                FUNDAMENTALS: "What is the difference between components, services, and modules in Angular?"
+                FUNDAMENTALS: "How does two-way binding work, and when can it become messy?"
+                TRICKY: "What can go wrong if you subscribe to observables and never unsubscribe?"
+                SCENARIO: "Imagine you're building a form-heavy dashboard in Angular — how would you approach validation?"
+                PROJECT: "Walk me through an Angular project you built — how did you manage state and API calls?"
+                BEHAVIORAL: "What Angular concept took you the longest to understand?"
+                """ : """
+                FUNDAMENTALS: "How does Angular change detection work, and when would you use OnPush?"
+                FUNDAMENTALS: "How do RxJS operators help manage complex async workflows?"
+                TRICKY: "A component keeps re-rendering or firing API calls unexpectedly — how do you debug it?"
+                DESIGN: "How would you architect a large Angular application with shared modules, lazy loading, and permissions?"
+                PROJECT: "Tell me about a performance issue you solved in Angular."
+                BEHAVIORAL: "Tell me about a time frontend architecture decisions affected team velocity."
+                """;
+
+            case "data_analyst" -> fresher ? """
+                FUNDAMENTALS: "How would you explain joins in SQL using a simple business example?"
+                FUNDAMENTALS: "What's the difference between a metric, a dimension, and a KPI?"
+                TRICKY: "If two dashboards show different revenue numbers, how do you investigate which one is right?"
+                SCENARIO: "A product manager asks why signups dropped last week — how would you start the analysis?"
+                PROJECT: "Walk me through an analysis or dashboard you built — what insight did it reveal?"
+                BEHAVIORAL: "How do you communicate uncertainty when the data is incomplete?"
+                """ : """
+                FUNDAMENTALS: "How do you design a metric so it stays consistent across teams and dashboards?"
+                FUNDAMENTALS: "How do window functions change the way you solve analytical SQL problems?"
+                TRICKY: "A query result is technically correct but leads stakeholders to a wrong conclusion — what happened?"
+                DESIGN: "How would you build an executive dashboard that is trusted, explainable, and hard to misuse?"
+                PROJECT: "Tell me about a time your analysis changed a business decision."
+                BEHAVIORAL: "Tell me about a time you pushed back on a stakeholder's interpretation of data."
+                """;
+
+            case "sql_developer" -> fresher ? """
+                FUNDAMENTALS: "What's the difference between INNER JOIN, LEFT JOIN, and FULL OUTER JOIN?"
+                FUNDAMENTALS: "What is an index, and why can it make one query faster but writes slower?"
+                TRICKY: "Why can COUNT(*) and COUNT(column_name) return different numbers?"
+                SCENARIO: "You need to find duplicate customer records in a table — how would you write that query?"
+                PROJECT: "Tell me about a database or reporting project you worked on — what tables mattered most?"
+                BEHAVIORAL: "When a SQL query returns unexpected results, how do you debug it?"
+                """ : """
+                FUNDAMENTALS: "How do you read an execution plan and decide where the query is actually slow?"
+                FUNDAMENTALS: "When would you use a window function instead of GROUP BY?"
+                TRICKY: "An index exists but the database still does a full scan — what are the possible reasons?"
+                DESIGN: "How would you design tables and stored procedures for a reporting workload with heavy reads?"
+                PROJECT: "Tell me about the hardest query optimization problem you've solved."
+                BEHAVIORAL: "Tell me about a time a database change had to be made with zero downtime."
+                """;
+
+            case "business_analyst" -> fresher ? """
+                FUNDAMENTALS: "How do you turn a vague business request into clear requirements?"
+                FUNDAMENTALS: "What's the difference between functional and non-functional requirements?"
+                TRICKY: "A stakeholder asks for a feature, but the problem is unclear — what do you do?"
+                SCENARIO: "Imagine a checkout process has high drop-off — how would you gather and structure requirements?"
+                PROJECT: "Walk me through a project where you had to understand both business and technical constraints."
+                BEHAVIORAL: "How do you handle two stakeholders who want conflicting things?"
+                """ : """
+                FUNDAMENTALS: "How do you validate requirements before engineering starts implementation?"
+                FUNDAMENTALS: "How do process maps, user stories, and acceptance criteria work together?"
+                TRICKY: "A requirement is signed off but later turns out to solve the wrong problem — how do you recover?"
+                DESIGN: "How would you redesign a requirements intake process for a fast-moving product team?"
+                PROJECT: "Tell me about a time your analysis prevented wasted engineering effort."
+                BEHAVIORAL: "Tell me about a time you had to say no to a senior stakeholder."
+                """;
+
+            case "aws_engineer", "azure_engineer" -> fresher ? """
+                FUNDAMENTALS: "What is a virtual network or VPC, and why is it central to cloud architecture?"
+                FUNDAMENTALS: "How do IAM roles and permissions protect cloud resources?"
+                TRICKY: "If an application cannot connect to a database in the cloud, what layers do you check first?"
+                SCENARIO: "You need to host a small web app securely in the cloud — what services would you choose?"
+                PROJECT: "Walk me through anything you've deployed on AWS or Azure — what did you configure yourself?"
+                BEHAVIORAL: "How do you learn a cloud service you have not used before?"
+                """ : """
+                FUNDAMENTALS: "How do identity, networking, and logging choices affect cloud security posture?"
+                FUNDAMENTALS: "How do you design for high availability across zones or regions without wasting cost?"
+                TRICKY: "A workload is reliable but the cloud bill doubles — how do you find the cause?"
+                DESIGN: "How would you design a secure landing zone for multiple teams and environments?"
+                PROJECT: "Tell me about a cloud migration or infrastructure build you owned."
+                BEHAVIORAL: "Tell me about a time reliability and cost goals were in tension."
+                """;
+
+            case "cybersecurity_analyst" -> fresher ? """
+                FUNDAMENTALS: "What's the difference between vulnerability, threat, and risk?"
+                FUNDAMENTALS: "How would you explain phishing detection to a non-technical employee?"
+                TRICKY: "If an alert fires repeatedly but no incident is found, do you ignore it or tune it?"
+                SCENARIO: "A user's account shows suspicious login activity — what steps do you take first?"
+                PROJECT: "Walk me through any security lab, CTF, or monitoring project you have done."
+                BEHAVIORAL: "How do you stay calm and structured when something looks like an incident?"
+                """ : """
+                FUNDAMENTALS: "How do you triage alerts so real incidents are not buried under noise?"
+                FUNDAMENTALS: "How do MITRE ATT&CK, logs, and endpoint telemetry help your investigation?"
+                TRICKY: "A vulnerability is critical but exploitation seems unlikely — how do you prioritize it?"
+                DESIGN: "How would you design an incident response workflow from detection to postmortem?"
+                PROJECT: "Tell me about a real or simulated incident you investigated — what evidence mattered most?"
+                BEHAVIORAL: "Tell me about a time you had to communicate security risk to leadership."
+                """;
+
+            case "sdet" -> fresher ? """
+                FUNDAMENTALS: "What's the difference between testing a feature manually and building automated coverage for it?"
+                FUNDAMENTALS: "How do you choose test data for positive, negative, and edge cases?"
+                TRICKY: "Can a passing automated test still hide a serious bug?"
+                SCENARIO: "You're asked to automate tests for an API endpoint — what cases would you cover first?"
+                PROJECT: "Walk me through a test automation project you built or contributed to."
+                BEHAVIORAL: "How do you explain a bug so developers can reproduce it quickly?"
+                """ : """
+                FUNDAMENTALS: "How do you design an automation framework that is maintainable across teams?"
+                FUNDAMENTALS: "How do contract tests, integration tests, and end-to-end tests complement each other?"
+                TRICKY: "A flaky test blocks releases but catches real bugs sometimes — how do you handle it?"
+                DESIGN: "How would you build CI quality gates without making the pipeline painfully slow?"
+                PROJECT: "Tell me about an automation strategy that improved release confidence."
+                BEHAVIORAL: "Tell me about a time you challenged a release because of quality risk."
+                """;
+
+            case "prompt_engineer" -> fresher ? """
+                FUNDAMENTALS: "What makes a prompt specific enough for useful LLM output?"
+                FUNDAMENTALS: "How do examples in a prompt change the model's behavior?"
+                TRICKY: "If a prompt works once but fails on a similar input, what do you change first?"
+                SCENARIO: "You need an LLM to summarize support tickets consistently — how would you design the prompt?"
+                PROJECT: "Walk me through a prompt workflow you built — how did you test quality?"
+                BEHAVIORAL: "How do you handle feedback when users say the AI output feels wrong but cannot explain why?"
+                """ : """
+                FUNDAMENTALS: "How do you evaluate prompt quality across accuracy, safety, consistency, and latency?"
+                FUNDAMENTALS: "When would you use prompt templates, tool calls, retrieval, or fine-tuning?"
+                TRICKY: "A model follows the prompt in English but fails with multilingual input — how do you debug it?"
+                DESIGN: "How would you build a prompt management and regression testing process for production LLM features?"
+                PROJECT: "Tell me about a prompt system you improved measurably."
+                BEHAVIORAL: "Tell me about a time you had to align creative output with strict business constraints."
+                """;
+
+            case "ui_ux_designer" -> fresher ? """
+                FUNDAMENTALS: "How do you explain the difference between UI and UX?"
+                FUNDAMENTALS: "What makes a user flow easy to understand?"
+                TRICKY: "If users say a design looks good but cannot complete the task, what does that tell you?"
+                SCENARIO: "Imagine you're redesigning a signup form with high drop-off — how would you approach it?"
+                PROJECT: "Walk me through a design project — what problem were you solving and how did the design change?"
+                BEHAVIORAL: "How do you respond when a stakeholder wants a design change you think hurts usability?"
+                """ : """
+                FUNDAMENTALS: "How do you connect research insights to concrete interaction and visual design decisions?"
+                FUNDAMENTALS: "How do design systems improve consistency without limiting product flexibility?"
+                TRICKY: "A usability test contradicts stakeholder preferences — how do you handle the decision?"
+                DESIGN: "How would you redesign a complex workflow for expert users without slowing them down?"
+                PROJECT: "Tell me about a design decision that improved a measurable product outcome."
+                BEHAVIORAL: "Tell me about a time engineering constraints forced you to rethink a design."
+                """;
+
             case "java_developer" -> fresher ? """
                 FUNDAMENTALS: "What actually happens in memory when you create an object in Java — walk me through it."
                 FUNDAMENTALS: "Can you explain the difference between == and .equals() in Java, and when would == fool you?"
@@ -981,11 +1271,16 @@ public class GeminiService {
 
     private String codingLanguageForRole(String normalizedRole) {
         return switch (normalizedRole) {
-            case "java_developer", "backend_engineer", "software_architect" -> "java";
-            case "python_developer", "data_scientist", "data_engineer"      -> "python";
-            case "react_developer", "frontend_engineer"                     -> "javascript";
-            case "full_stack_developer"                                      -> "javascript";
-            case "mobile_developer"                                          -> "kotlin";
+            case "java_developer", "backend_engineer", "software_architect"  -> "java";
+            case "python_developer", "data_scientist", "data_engineer",
+                 "ai_engineer", "generative_ai_engineer",
+                 "machine_learning_engineer"                                 -> "python";
+            case "data_analyst", "sql_developer"                             -> "sql";
+            case "dotnet_developer", "csharp_developer"                      -> "csharp";
+            case "react_developer", "frontend_engineer", "nodejs_developer",
+                 "angular_developer", "full_stack_developer"                 -> "javascript";
+            case "qa_automation_engineer", "sdet"                            -> "java";
+            case "mobile_developer"                                           -> "kotlin";
             default                                                          -> "";
         };
     }
@@ -1409,11 +1704,27 @@ public class GeminiService {
 
     private String inferRoleFromResume(String resumeText) {
         String lower = resumeText == null ? "" : resumeText.toLowerCase(Locale.ROOT);
+        if (lower.contains("generative ai") || lower.contains("genai") || lower.contains("rag") || lower.contains("llm")) return "generative_ai_engineer";
+        if (lower.contains("prompt engineer") || lower.contains("prompt engineering"))       return "prompt_engineer";
+        if (lower.contains("machine learning engineer") || lower.contains("ml engineer"))     return "machine_learning_engineer";
+        if (lower.contains("ai engineer"))                                                    return "ai_engineer";
+        if (lower.contains(".net") || lower.contains("asp.net"))                              return "dotnet_developer";
+        if (lower.contains("c#") || lower.contains("c sharp"))                                return "csharp_developer";
+        if (lower.contains("node.js") || lower.contains("nodejs") || lower.contains("express")) return "nodejs_developer";
+        if (lower.contains("angular"))                                                        return "angular_developer";
         if (lower.contains("spring") || lower.contains("java "))                               return "java_developer";
         if (lower.contains("react") || lower.contains("frontend"))                             return "frontend_engineer";
         if (lower.contains("python") || lower.contains("fastapi") || lower.contains("django")) return "python_developer";
+        if (lower.contains("data analyst") || lower.contains("power bi") || lower.contains("tableau")) return "data_analyst";
+        if (lower.contains("sql developer") || lower.contains("stored procedure"))             return "sql_developer";
+        if (lower.contains("business analyst") || lower.contains("requirements analysis"))     return "business_analyst";
+        if (lower.contains("aws "))                                                            return "aws_engineer";
+        if (lower.contains("azure"))                                                           return "azure_engineer";
+        if (lower.contains("cybersecurity") || lower.contains("soc analyst") || lower.contains("security analyst")) return "cybersecurity_analyst";
+        if (lower.contains("sdet"))                                                            return "sdet";
         if (lower.contains("kubernetes") || lower.contains("devops") || lower.contains("terraform")) return "devops_engineer";
         if (lower.contains("machine learning") || lower.contains("data science"))              return "data_scientist";
+        if (lower.contains("ui/ux") || lower.contains("ux designer") || lower.contains("ui designer")) return "ui_ux_designer";
         if (lower.contains("product manager") || lower.contains("roadmap"))                   return "product_manager";
         if (lower.contains("recruiter") || lower.contains("talent acquisition"))              return "hr_recruiter";
         return DEFAULT_ROLE;

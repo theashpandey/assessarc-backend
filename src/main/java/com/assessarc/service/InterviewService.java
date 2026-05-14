@@ -297,6 +297,39 @@ public class InterviewService {
                 .filter(c -> !"behavioral".equals(c))
                 .findFirst()
                 .orElse("problem_solving");
+        if ("sql".equals(language)) {
+            String question = "Write a SQL query to "
+                    + ("medium".equals(difficulty)
+                    ? "find the second highest salary from an employees table."
+                    : "return each department with its total number of employees.");
+            String normalized = normalizeQuestionText(question);
+            if (!seenQuestionTexts.add(normalized)) {
+                question = "Write a SQL query to "
+                        + ("medium".equals(difficulty)
+                        ? "find customers who placed more than three orders in the last 30 days."
+                        : "return all duplicate email addresses from a users table.");
+            }
+            List<Dto.TestCase> testCases = "medium".equals(difficulty)
+                    ? List.of(
+                        Dto.TestCase.builder().input("employees(id, name, salary) with salaries 50000, 70000, 70000, 60000").expectedOutput("60000").build(),
+                        Dto.TestCase.builder().input("employees(id, name, salary) with salaries 90000, 80000, 70000").expectedOutput("80000").build())
+                    : List.of(
+                        Dto.TestCase.builder().input("employees(id, name, department) with Engineering x2 and Sales x1").expectedOutput("Engineering 2, Sales 1").build(),
+                        Dto.TestCase.builder().input("employees(id, name, department) with HR x3").expectedOutput("HR 3").build());
+            return Dto.QuestionDto.builder()
+                    .id("ai_" + UUID.randomUUID())
+                    .question(question)
+                    .category("sql")
+                    .difficulty(difficulty)
+                    .type("coding")
+                    .codingData(Dto.CodingQuestionData.builder()
+                            .language(language)
+                            .description(question)
+                            .expectedOutput("Return the requested rows or values with correct grouping, filtering, and ordering where needed.")
+                            .testCases(testCases)
+                            .build())
+                    .build();
+        }
         String question = "Write a " + languageDisplayName(language) + " function to "
                 + ("medium".equals(difficulty)
                 ? "find the first non-repeating character in a string and return its index, or -1 if none exists."
@@ -363,9 +396,15 @@ public class InterviewService {
         if (requested != null && !requested.isBlank()) return requested.trim().toLowerCase(Locale.ROOT);
         String normalized = geminiService.normalizeRole(role);
         if ("java_developer".equals(normalized) || "backend_engineer".equals(normalized)) return "java";
-        if ("python_developer".equals(normalized) || "data_scientist".equals(normalized)) return "python";
+        if ("python_developer".equals(normalized) || "data_scientist".equals(normalized)
+                || "ai_engineer".equals(normalized) || "generative_ai_engineer".equals(normalized)
+                || "machine_learning_engineer".equals(normalized) || "data_engineer".equals(normalized)) return "python";
+        if ("data_analyst".equals(normalized) || "sql_developer".equals(normalized)) return "sql";
+        if ("dotnet_developer".equals(normalized) || "csharp_developer".equals(normalized)) return "csharp";
         if ("react_developer".equals(normalized) || "frontend_engineer".equals(normalized)
-                || "full_stack_developer".equals(normalized)) return "javascript";
+                || "full_stack_developer".equals(normalized) || "nodejs_developer".equals(normalized)
+                || "angular_developer".equals(normalized)) return "javascript";
+        if ("qa_automation_engineer".equals(normalized) || "sdet".equals(normalized)) return "java";
         return "java";
     }
 
@@ -373,6 +412,7 @@ public class InterviewService {
         return switch (language) {
             case "javascript" -> "JavaScript";
             case "python" -> "Python";
+            case "sql" -> "SQL";
             case "cpp" -> "C++";
             case "csharp" -> "C#";
             default -> "Java";
