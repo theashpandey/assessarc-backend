@@ -242,6 +242,7 @@ public class Dto {
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class SubmitAnswerResponse {
         private String feedback;
+        private String answer;
         private boolean isLastQuestion;
     }
 

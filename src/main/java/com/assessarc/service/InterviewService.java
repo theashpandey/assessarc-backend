@@ -590,8 +590,22 @@ public class InterviewService {
             interviewRepository.updateAnswerAndFeedback(req.getInterviewId(), idx, "(skipped)", skipFeedback);
             return Dto.SubmitAnswerResponse.builder()
                     .feedback(skipFeedback)
+                    .answer("(skipped)")
                     .isLastQuestion(idx == questions.size() - 1)
                     .build();
+        }
+
+        try {
+            String correctedAnswer = geminiService.correctTranscript(answer, uid, interview.getId());
+            if (correctedAnswer != null && !correctedAnswer.isBlank()) {
+                answer = correctedAnswer.trim();
+            }
+        } catch (GeminiService.GeminiQuotaException | GeminiService.GeminiUnavailableException e) {
+            log.warn("Transcript correction unavailable for interview {} question {}: {}",
+                    req.getInterviewId(), idx, e.getMessage());
+        } catch (Exception e) {
+            log.warn("Transcript correction failed for interview {} question {}: {}",
+                    req.getInterviewId(), idx, e.getMessage());
         }
 
         // Previous Q&A for conversational context
@@ -620,6 +634,7 @@ public class InterviewService {
 
         return Dto.SubmitAnswerResponse.builder()
                 .feedback(feedback)
+                .answer(answer)
                 .isLastQuestion(idx == questions.size() - 1)
                 .build();
     }

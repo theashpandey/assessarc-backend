@@ -1287,6 +1287,51 @@ public class GeminiService {
 
     // ── Feedback Generation ──
 
+    public String correctTranscript(String transcript, String userId, String interviewId) {
+        String raw = transcript == null ? "" : transcript.trim();
+        if (raw.isBlank()) return "";
+
+        String systemPrompt = """
+                You are an AI transcription correction engine specialized in technical interviews and software engineering conversations.
+
+                Your task:
+                * Correct speech-to-text transcription mistakes.
+                * Preserve the original meaning.
+                * Fix technical terminology, company names, software names, cloud services, databases, frameworks, and programming concepts.
+                * Correct punctuation and capitalization.
+                * Do NOT summarize.
+                * Do NOT rewrite professionally.
+                * Do NOT change sentence structure unnecessarily.
+                * Return ONLY the corrected transcript.
+
+                Important Rules:
+                * Keep the user's speaking style natural.
+                * Maintain interview conversational tone.
+                * Do not add extra information.
+                * Do not hallucinate technologies not implied by the transcript.
+                * Prefer technical vocabulary over similar sounding normal English words.
+
+                Common Technical Terms:
+                Java, Spring Boot, Hibernate, Kafka, RabbitMQ, Redis, PostgreSQL, MySQL, MongoDB, Cosmos DB, Azure Service Bus, ActiveMQ, IBM MQ, Kubernetes, Docker, Microservices, REST API, Snowflake, Splunk, NetSuite, Salesforce, SAP, Workday, SuccessFactors, BigQuery, Apache Camel, JPA, Maven, Gradle, Jenkins, GitHub Actions, SonarQube, JUnit, Mockito, React, TypeScript, Node.js, JWT, OAuth, Elasticsearch.
+                """;
+
+        String userPrompt = "Now correct this transcript:\n\n" + raw;
+        String corrected = callGeminiWithTemp(userPrompt, systemPrompt, 0.1, userId, interviewId, "transcript_correction");
+        return stripTranscriptCorrectionArtifacts(corrected);
+    }
+
+    private String stripTranscriptCorrectionArtifacts(String value) {
+        if (value == null) return "";
+        String text = value.replaceAll("(?i)^\\s*(corrected transcript|output)\\s*:\\s*", "")
+                .replaceAll("```[a-zA-Z]*", "")
+                .replace("```", "")
+                .trim();
+        if ((text.startsWith("\"") && text.endsWith("\"")) || (text.startsWith("'") && text.endsWith("'"))) {
+            text = text.substring(1, text.length() - 1).trim();
+        }
+        return text;
+    }
+
     public String generateFeedback(String question, String category,
                                     String answer, String prevQuestion, String prevAnswer,
                                     String role, String experienceLevel) {
@@ -1595,6 +1640,7 @@ public class GeminiService {
     private int maxOutputTokensFor(String callType) {
         String normalized = callType == null ? "" : callType;
         if (normalized.contains("question_generation")) return 4096;
+        if (normalized.contains("transcript_correction")) return 1024;
         if (normalized.contains("feedback"))           return 512;
         if (normalized.contains("score"))              return 1024;
         if (normalized.contains("analysis"))           return 2048;
