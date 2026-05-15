@@ -503,13 +503,13 @@ public class GeminiService {
             if (durationMinutes == 30) {
                 codingCount = 1;
                 codingInstructions = "Include exactly 1 CODING question (difficulty: easy). " +
-                        "Make it a real, trending most-asked coding question asked in top tech company(like Google, Amazon, and Microsoft, Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc) interviews — not a trivial print statement.";
+                        "Make it a real, trending most-asked coding question asked in top tech company(like Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc) interviews — not a trivial print statement.";
             } else if (durationMinutes == 60) {
                 codingCount = 2;
                 codingInstructions = "Include trending most-asked exactly 2 CODING questions. " +
                         "First: easy — a common interview coding question. " +
                         "Second: medium — a more realistic problem that tests algorithmic thinking. " +
-                        "Both should reflect trending questions asked at companies like Google, Amazon, and Microsoft, Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc.";
+                        "Both should reflect trending questions asked at companies like Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc.";
             }
         }
         int textCount = count - codingCount;
@@ -548,7 +548,7 @@ public class GeminiService {
                 "Allowed categories: %s\n\n" +
                 "%s\n\n" +
                 "IMPORTANT — QUESTION QUALITY RULES:\n" +
-                "- Include 40 percent trending, most-asked questions from top tech companies Google, Amazon, Microsoft, Flipkart, Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. relevant to this role and experience level.\n" +
+                "- Include 40 percent trending, most-asked questions from top tech companies Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. relevant to this role and experience level.\n" +
                 "- Each question must sound like a real human interviewer saying it out loud — natural, conversational, not robotic.\n" +
                 "- Mix question types: fundamentals, tricky/gotcha, scenario-based, resume/project-based, and behavioral — as per the bucket distribution above.\n" +
                 "- DO NOT mention 'resume', 'your profile', 'as per your CV' directly in the question text.\n" +
@@ -1286,39 +1286,69 @@ public class GeminiService {
     }
 
     // ── Feedback Generation ──
+public String correctTranscript(String transcript, String userId, String interviewId) {
+    String raw = transcript == null ? "" : transcript.trim();
+    if (raw.isBlank()) return "";
 
-    public String correctTranscript(String transcript, String userId, String interviewId) {
-        String raw = transcript == null ? "" : transcript.trim();
-        if (raw.isBlank()) return "";
+    String systemPrompt = """
+            You are a spelling-only corrector for speech-to-text transcripts from technical interviews.
 
-        String systemPrompt = """
-                You are an AI transcription correction engine specialized in technical interviews and software engineering conversations.
+            YOUR ONLY JOB:
+            * Fix words that were misheared or misspelled by the speech-to-text engine.
+            * Correct technical terms that sound similar but were transcribed incorrectly
+              (e.g. "rabbit mq" → "RabbitMQ", "git hub" → "GitHub", "cue bernetti's" → "Kubernetes").
+            * Fix obvious capitalization of proper nouns and technical names.
 
-                Your task:
-                * Correct speech-to-text transcription mistakes.
-                * Preserve the original meaning.
-                * Fix technical terminology, company names, software names, cloud services, databases, frameworks, and programming concepts.
-                * Correct punctuation and capitalization.
-                * Do NOT summarize.
-                * Do NOT rewrite professionally.
-                * Do NOT change sentence structure unnecessarily.
-                * Return ONLY the corrected transcript.
+            STRICT RULES — NEVER VIOLATE:
+            * Do NOT change word order.
+            * Do NOT add or remove any words.
+            * Do NOT restructure or rephrase any sentence.
+            * Do NOT improve grammar or fluency.
+            * Do NOT fix run-on sentences or fragments — leave them as-is.
+            * Do NOT add punctuation beyond what is already implied.
+            * Do NOT summarize or paraphrase anything.
+            * Preserve filler words exactly: "um", "uh", "like", "you know", "so", "basically", etc.
+            * Preserve repetitions and self-corrections exactly as spoken.
+            * Preserve the user's natural speaking rhythm and flow.
 
-                Important Rules:
-                * Keep the user's speaking style natural.
-                * Maintain interview conversational tone.
-                * Do not add extra information.
-                * Do not hallucinate technologies not implied by the transcript.
-                * Prefer technical vocabulary over similar sounding normal English words.
+            OUTPUT:
+            * Return ONLY the corrected transcript text.
+            * No explanations, no notes, no formatting, no markdown.
 
-                Common Technical Terms:
-                Java, Spring Boot, Hibernate, Kafka, RabbitMQ, Redis, PostgreSQL, MySQL, MongoDB, Cosmos DB, Azure Service Bus, ActiveMQ, IBM MQ, Kubernetes, Docker, Microservices, REST API, Snowflake, Splunk, NetSuite, Salesforce, SAP, Workday, SuccessFactors, BigQuery, Apache Camel, JPA, Maven, Gradle, Jenkins, GitHub Actions, SonarQube, JUnit, Mockito, React, TypeScript, Node.js, JWT, OAuth, Elasticsearch.
-                """;
+            Think of yourself as autocorrect — not an editor.
+            You fix typos. You do not rewrite.
 
-        String userPrompt = "Now correct this transcript:\n\n" + raw;
-        String corrected = callGeminiWithTemp(userPrompt, systemPrompt, 0.1, userId, interviewId, "transcript_correction");
-        return stripTranscriptCorrectionArtifacts(corrected);
-    }
+            Common Technical Terms Reference (for spelling correction only):
+            Java, Spring Boot, Hibernate, Kafka, RabbitMQ, Redis, PostgreSQL, MySQL, MongoDB,
+            Cosmos DB, Azure Service Bus, ActiveMQ, IBM MQ, Kubernetes, Docker, Microservices,
+            REST API, Snowflake, Splunk, NetSuite, Salesforce, SAP, Workday, SuccessFactors,
+            BigQuery, Apache Camel, JPA, Maven, Gradle, Jenkins, GitHub Actions, SonarQube,
+            JUnit, Mockito, React, TypeScript, Node.js, JWT, OAuth, Elasticsearch.
+            """;
+
+    // Few-shot examples baked into the user turn to anchor behavior
+    String userPrompt = """
+            Examples of what to do:
+
+            INPUT:  "i used rabbit mq for a sync communication between the micro services"
+            OUTPUT: "i used RabbitMQ for async communication between the microservices"
+
+            INPUT:  "so basically um we had like a cue bernetti's cluster with like three nodes"
+            OUTPUT: "so basically um we had like a Kubernetes cluster with like three nodes"
+
+            INPUT:  "i implemented the restful a p i using spring boot and j p a"
+            OUTPUT: "i implemented the RESTful API using Spring Boot and JPA"
+
+            INPUT:  "we where using post gress and then migrated to mongo db"
+            OUTPUT: "we were using PostgreSQL and then migrated to MongoDB"
+
+            Now correct this transcript (spelling and technical terms only, no other changes):
+
+            """ + raw;
+
+    String corrected = callGeminiWithTemp(userPrompt, systemPrompt, 0.0, userId, interviewId, "transcript_correction");
+    return stripTranscriptCorrectionArtifacts(corrected);
+}
 
     private String stripTranscriptCorrectionArtifacts(String value) {
         if (value == null) return "";
@@ -1502,7 +1532,7 @@ public class GeminiService {
 
     private String buildInterviewerSystemPrompt(String roleLabel, boolean fresher) {
         if (fresher) {
-            return "You are Sarah, a friendly and experienced " + roleLabel + " interviewer at a top tech company. " +
+            return "You are Sarah, a friendly and experienced " + roleLabel + " interviewer at a top tech company like Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. " +
                    "You are conducting a campus or entry-level interview. " +
                    "Your style is warm, patient, and encouraging — you want to understand how the candidate THINKS, not just what they know. " +
                    "You ask questions that test curiosity, fundamentals, and potential — including trending questions asked at top companies. " +
@@ -1510,11 +1540,11 @@ public class GeminiService {
                    "You sound like a human colleague, not a textbook. Never sound robotic or list-like. " +
                    "You genuinely want to help freshers show their best.";
         } else {
-            return "You are Sarah, a sharp and experienced " + roleLabel + " interviewer at a top tech company. " +
+            return "You are Sarah, a sharp and experienced " + roleLabel + " interviewer at a top tech company like Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. " +
                    "You conduct senior-level interviews. " +
                    "Your style is direct, professional, and intellectually curious — you probe for depth, tradeoffs, and real judgment. " +
                    "You ask questions the way a senior engineer or engineering manager would in a real interview room. " +
-                   "You include trending, most-asked questions from companies like Google, Amazon, and Microsoft. " +
+                   "You include trending, most-asked questions from companies like Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. " +
                    "You are never generic. You never ask textbook-style list questions. " +
                    "You sound like a smart human peer who has seen a lot of systems and candidates.";
         }
