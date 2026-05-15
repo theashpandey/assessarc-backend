@@ -337,7 +337,22 @@ public class Dto {
         private CodingQuestionData codingData;
         private String answer;
         private String feedback;
+        private AnswerTraceDetail answerTrace;
         private CodingSubmissionDetail codingSubmission;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class AnswerTraceDetail {
+        private String source;
+        private String transcriptionStatus;
+        private String browserTranscript;
+        private String audioTranscript;
+        private String finalTranscript;
+        private String audioMimeType;
+        private long audioBytes;
+        private long transcribedAt;
+        private long correctedAt;
+        private String error;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -448,6 +463,7 @@ public class Dto {
         private List<AdminMetricBucket> usersByExperienceLevel;
         private List<AdminMetricBucket> interviewsByRole;
         private List<AdminUserItem> recentUsers;
+        private List<AdminAnswerAuditItem> recentAnswerAudits;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -485,6 +501,26 @@ public class Dto {
         private double avgScore;
         private String createdAt;
         private String lastActiveAt;
+    }
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class AdminAnswerAuditItem {
+        private String interviewId;
+        private String userId;
+        private String userName;
+        private String userEmail;
+        private int questionIndex;
+        private String question;
+        private String source;
+        private String transcriptionStatus;
+        private String browserTranscript;
+        private String audioTranscript;
+        private String finalTranscript;
+        private String audioMimeType;
+        private long audioBytes;
+        private String transcribedAt;
+        private String correctedAt;
+        private String error;
     }
 
     // ── Performance Analysis ──

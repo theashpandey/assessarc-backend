@@ -556,6 +556,15 @@ public class InterviewService {
     }
 
     public Dto.SubmitAnswerResponse submitAnswer(String uid, Dto.SubmitAnswerRequest req) {
+        Interview.AnswerTrace trace = Interview.AnswerTrace.builder()
+                .source("browser_text")
+                .transcriptionStatus("not_available")
+                .browserTranscript(req.getAnswer() != null ? req.getAnswer().trim() : "")
+                .build();
+        return submitAnswer(uid, req, trace);
+    }
+
+    private Dto.SubmitAnswerResponse submitAnswer(String uid, Dto.SubmitAnswerRequest req, Interview.AnswerTrace trace) {
         Interview interview = interviewRepository.findById(req.getInterviewId())
                 .orElseThrow(() -> new RuntimeException("Interview not found"));
 
@@ -588,7 +597,11 @@ public class InterviewService {
             String skipFeedback = "It looks like you didn't get a chance to answer that one. "
                     + "That's okay — let's keep moving. Try to give at least a brief answer "
                     + "even if you're unsure, as it helps me understand your thought process.";
-            interviewRepository.updateAnswerAndFeedback(req.getInterviewId(), idx, "(skipped)", skipFeedback);
+            Interview.AnswerTrace skippedTrace = trace != null ? trace : Interview.AnswerTrace.builder().build();
+            skippedTrace.setSource("skipped");
+            skippedTrace.setFinalTranscript("(skipped)");
+            skippedTrace.setCorrectedAt(System.currentTimeMillis());
+            interviewRepository.updateAnswerAndFeedback(req.getInterviewId(), idx, "(skipped)", skipFeedback, skippedTrace);
             return Dto.SubmitAnswerResponse.builder()
                     .feedback(skipFeedback)
                     .answer("(skipped)")
@@ -607,6 +620,10 @@ public class InterviewService {
         } catch (Exception e) {
             log.warn("Transcript correction failed for interview {} question {}: {}",
                     req.getInterviewId(), idx, e.getMessage());
+        }
+        if (trace != null) {
+            trace.setFinalTranscript(answer);
+            trace.setCorrectedAt(System.currentTimeMillis());
         }
 
         // Previous Q&A for conversational context
@@ -631,7 +648,7 @@ public class InterviewService {
         }
 
         // Persist to Firestore
-        interviewRepository.updateAnswerAndFeedback(req.getInterviewId(), idx, answer, feedback);
+        interviewRepository.updateAnswerAndFeedback(req.getInterviewId(), idx, answer, feedback, trace);
 
         return Dto.SubmitAnswerResponse.builder()
                 .feedback(feedback)
@@ -640,7 +657,7 @@ public class InterviewService {
                 .build();
     }
 
-    // ── Submit Coding Answer ──
+    // ── Submit Audio Answer ──
     public Dto.SubmitAnswerResponse submitAudioAnswer(String uid,
                                                       String interviewId,
                                                       String questionId,
@@ -660,14 +677,22 @@ public class InterviewService {
         }
 
         Interview.QuestionAnswer currentQ = questions.get(questionIndex);
-        String answer = fallbackAnswer != null ? fallbackAnswer.trim() : "";
+        String browserTranscript = fallbackAnswer != null ? fallbackAnswer.trim() : "";
+        String answer = browserTranscript;
+        Interview.AnswerTrace trace = Interview.AnswerTrace.builder()
+                .source("browser_text")
+                .transcriptionStatus("not_available")
+                .browserTranscript(browserTranscript)
+                .build();
 
         if (audio != null && !audio.isEmpty()) {
+            trace.setAudioBytes(audio.getSize());
             try {
                 String mimeType = audio.getContentType();
                 if (mimeType == null || mimeType.isBlank()) {
                     mimeType = "audio/webm";
                 }
+                trace.setAudioMimeType(mimeType);
                 String transcript = geminiService.transcribeAnswerAudio(
                         audio.getBytes(),
                         mimeType,
@@ -678,11 +703,25 @@ public class InterviewService {
                         interviewId);
                 if (transcript != null && !transcript.isBlank()) {
                     answer = transcript.trim();
+                    trace.setSource("audio_transcription");
+                    trace.setTranscriptionStatus("success");
+                    trace.setAudioTranscript(answer);
+                    trace.setTranscribedAt(System.currentTimeMillis());
+                } else {
+                    trace.setSource(browserTranscript.isBlank() ? "skipped" : "browser_fallback");
+                    trace.setTranscriptionStatus("empty");
+                    trace.setTranscribedAt(System.currentTimeMillis());
                 }
             } catch (GeminiService.GeminiQuotaException | GeminiService.GeminiUnavailableException e) {
+                trace.setSource(browserTranscript.isBlank() ? "skipped" : "browser_fallback");
+                trace.setTranscriptionStatus("failed");
+                trace.setError(e.getMessage());
                 log.warn("Audio transcription unavailable for interview {} question {}: {}",
                         interviewId, questionIndex, e.getMessage());
             } catch (Exception e) {
+                trace.setSource(browserTranscript.isBlank() ? "skipped" : "browser_fallback");
+                trace.setTranscriptionStatus("failed");
+                trace.setError(e.getMessage());
                 log.warn("Audio transcription failed for interview {} question {}: {}",
                         interviewId, questionIndex, e.getMessage());
             }
@@ -693,9 +732,10 @@ public class InterviewService {
                 .questionId(questionId)
                 .questionIndex(questionIndex)
                 .answer(answer)
-                .build());
+                .build(), trace);
     }
 
+    // ── Submit Coding Answer ──
     public Dto.SubmitCodingAnswerResponse submitCodingAnswer(String uid, Dto.SubmitCodingAnswerRequest req) {
         Interview interview = interviewRepository.findById(req.getInterviewId())
                 .orElseThrow(() -> new RuntimeException("Interview not found"));
@@ -1022,6 +1062,7 @@ public class InterviewService {
                                 .codingData(toDtoCodingData(q.getCodingData()))
                                 .answer(q.getAnswer() != null ? q.getAnswer() : "")
                                 .feedback(q.getFeedback() != null ? q.getFeedback() : "")
+                                .answerTrace(toAnswerTraceDetail(q.getAnswerTrace()))
                                 .codingSubmission(toCodingSubmissionDetail(q.getCodingSubmission()))
                                 .build())
                         .collect(Collectors.toList());
@@ -1040,6 +1081,23 @@ public class InterviewService {
                 .questions(qaList)
                 .build();
     }
+
+    private Dto.AnswerTraceDetail toAnswerTraceDetail(Interview.AnswerTrace trace) {
+        if (trace == null) return null;
+        return Dto.AnswerTraceDetail.builder()
+                .source(trace.getSource())
+                .transcriptionStatus(trace.getTranscriptionStatus())
+                .browserTranscript(trace.getBrowserTranscript())
+                .audioTranscript(trace.getAudioTranscript())
+                .finalTranscript(trace.getFinalTranscript())
+                .audioMimeType(trace.getAudioMimeType())
+                .audioBytes(trace.getAudioBytes())
+                .transcribedAt(trace.getTranscribedAt())
+                .correctedAt(trace.getCorrectedAt())
+                .error(trace.getError())
+                .build();
+    }
+
     public Dto.PerformanceAnalysisResponse getDetailAnalysis(String uid, String interviewId) {
       Interview interview = interviewRepository.findById(interviewId)
               .orElseThrow(() -> new RuntimeException("Interview not found"));

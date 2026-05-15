@@ -204,6 +204,12 @@ public class InterviewRepository {
 
     public void updateAnswerAndFeedback(String interviewId, int questionIndex,
                                          String answer, String feedback) {
+        updateAnswerAndFeedback(interviewId, questionIndex, answer, feedback, null);
+    }
+
+    public void updateAnswerAndFeedback(String interviewId, int questionIndex,
+                                         String answer, String feedback,
+                                         Interview.AnswerTrace answerTrace) {
         try {
             var docRef = firestore.collection(COLLECTION).document(interviewId);
             firestore.runTransaction(tx -> {
@@ -220,6 +226,9 @@ public class InterviewRepository {
                 qa.setAnswer(answer);
                 qa.setFeedback(feedback);
                 qa.setAnswerTimestamp(System.currentTimeMillis());
+                if (answerTrace != null) {
+                    qa.setAnswerTrace(answerTrace);
+                }
                 iv.getQuestions().set(questionIndex, qa);
 
                 tx.set(docRef, iv);

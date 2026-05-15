@@ -13,6 +13,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -47,6 +49,8 @@ public class AdminAnalyticsService {
         List<Interview> interviewsInRange = interviews.stream()
                 .filter(interview -> inRange(primaryInterviewTime(interview), range))
                 .toList();
+        Map<String, User> usersById = users.stream()
+                .collect(Collectors.toMap(User::getUid, Function.identity(), (a, b) -> a, HashMap::new));
 
         int avgScore = (int) Math.round(interviews.stream()
                 .map(Interview::getScores)
@@ -94,8 +98,49 @@ public class AdminAnalyticsService {
                         .limit(12)
                         .map(this::toAdminUserItem)
                         .toList())
+                .recentAnswerAudits(toRecentAnswerAudits(interviews, usersById))
                 .build();
     }
+
+    private List<Dto.AdminAnswerAuditItem> toRecentAnswerAudits(List<Interview> interviews, Map<String, User> usersById) {
+        List<AnswerAuditDraft> audits = new ArrayList<>();
+        for (Interview interview : interviews) {
+            List<Interview.QuestionAnswer> questions = interview.getQuestions();
+            if (questions == null) continue;
+            for (int i = 0; i < questions.size(); i++) {
+                Interview.QuestionAnswer qa = questions.get(i);
+                Interview.AnswerTrace trace = qa.getAnswerTrace();
+                if (trace == null) continue;
+                User user = usersById.get(interview.getUserId());
+                long sortTime = Math.max(trace.getCorrectedAt(), trace.getTranscribedAt());
+                audits.add(new AnswerAuditDraft(sortTime, Dto.AdminAnswerAuditItem.builder()
+                        .interviewId(interview.getId())
+                        .userId(interview.getUserId())
+                        .userName(user != null ? user.getName() : "")
+                        .userEmail(user != null ? user.getEmail() : "")
+                        .questionIndex(i)
+                        .question(qa.getQuestion())
+                        .source(trace.getSource())
+                        .transcriptionStatus(trace.getTranscriptionStatus())
+                        .browserTranscript(trace.getBrowserTranscript())
+                        .audioTranscript(trace.getAudioTranscript())
+                        .finalTranscript(trace.getFinalTranscript())
+                        .audioMimeType(trace.getAudioMimeType())
+                        .audioBytes(trace.getAudioBytes())
+                        .transcribedAt(formatMillis(trace.getTranscribedAt()))
+                        .correctedAt(formatMillis(trace.getCorrectedAt()))
+                        .error(trace.getError())
+                        .build()));
+            }
+        }
+        return audits.stream()
+                .sorted(Comparator.comparingLong(AnswerAuditDraft::sortTime).reversed())
+                .limit(20)
+                .map(AnswerAuditDraft::item)
+                .toList();
+    }
+
+    private record AnswerAuditDraft(long sortTime, Dto.AdminAnswerAuditItem item) {}
 
     private <T> List<Dto.AdminMetricBucket> groupByDay(List<T> items, Function<T, Long> timeExtractor) {
         Map<String, Integer> counts = new LinkedHashMap<>();

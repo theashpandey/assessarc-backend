@@ -49,7 +49,25 @@ public class Interview {
         private String answer;
         private String feedback;
         private long answerTimestamp;
+        private AnswerTrace answerTrace;
         private CodingSubmission codingSubmission;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AnswerTrace {
+        private String source; // audio_transcription | browser_text | browser_fallback | skipped
+        private String transcriptionStatus; // success | failed | not_available
+        private String browserTranscript;
+        private String audioTranscript;
+        private String finalTranscript;
+        private String audioMimeType;
+        private long audioBytes;
+        private long transcribedAt;
+        private long correctedAt;
+        private String error;
     }
 
     @Data
