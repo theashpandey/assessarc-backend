@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -41,6 +42,24 @@ public class InterviewController {
         log.info("SUBMIT answer uid={} interviewId={} qIndex={}",
                 uid, req.getInterviewId(), req.getQuestionIndex());
         return ResponseEntity.ok(interviewService.submitAnswer(uid, req));
+    }
+
+    @PostMapping(value = "/submit-audio", consumes = "multipart/form-data")
+    public ResponseEntity<Dto.SubmitAnswerResponse> submitAudio(
+            Authentication auth,
+            @RequestParam String interviewId,
+            @RequestParam(required = false) String questionId,
+            @RequestParam(defaultValue = "0") int questionIndex,
+            @RequestParam(required = false, defaultValue = "") String fallbackAnswer,
+            @RequestPart("audio") MultipartFile audio) {
+        if (interviewId == null || interviewId.isBlank()) {
+            throw new RuntimeException("Interview ID is required");
+        }
+        String uid = (String) auth.getPrincipal();
+        log.info("SUBMIT audio answer uid={} interviewId={} qIndex={} bytes={}",
+                uid, interviewId, questionIndex, audio != null ? audio.getSize() : 0);
+        return ResponseEntity.ok(interviewService.submitAudioAnswer(
+                uid, interviewId, questionId, questionIndex, fallbackAnswer, audio));
     }
 
     @PostMapping("/submit-coding")

@@ -10,6 +10,7 @@ import com.assessarc.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -640,6 +641,61 @@ public class InterviewService {
     }
 
     // ── Submit Coding Answer ──
+    public Dto.SubmitAnswerResponse submitAudioAnswer(String uid,
+                                                      String interviewId,
+                                                      String questionId,
+                                                      int questionIndex,
+                                                      String fallbackAnswer,
+                                                      MultipartFile audio) {
+        Interview interview = interviewRepository.findById(interviewId)
+                .orElseThrow(() -> new RuntimeException("Interview not found"));
+
+        if (!interview.getUserId().equals(uid)) {
+            throw new RuntimeException("Unauthorized");
+        }
+
+        List<Interview.QuestionAnswer> questions = interview.getQuestions();
+        if (questions == null || questionIndex < 0 || questionIndex >= questions.size()) {
+            throw new RuntimeException("Invalid question index: " + questionIndex);
+        }
+
+        Interview.QuestionAnswer currentQ = questions.get(questionIndex);
+        String answer = fallbackAnswer != null ? fallbackAnswer.trim() : "";
+
+        if (audio != null && !audio.isEmpty()) {
+            try {
+                String mimeType = audio.getContentType();
+                if (mimeType == null || mimeType.isBlank()) {
+                    mimeType = "audio/webm";
+                }
+                String transcript = geminiService.transcribeAnswerAudio(
+                        audio.getBytes(),
+                        mimeType,
+                        currentQ.getQuestion(),
+                        interview.getInterviewRole(),
+                        interview.getExperienceLevel(),
+                        uid,
+                        interviewId);
+                if (transcript != null && !transcript.isBlank()) {
+                    answer = transcript.trim();
+                }
+            } catch (GeminiService.GeminiQuotaException | GeminiService.GeminiUnavailableException e) {
+                log.warn("Audio transcription unavailable for interview {} question {}: {}",
+                        interviewId, questionIndex, e.getMessage());
+            } catch (Exception e) {
+                log.warn("Audio transcription failed for interview {} question {}: {}",
+                        interviewId, questionIndex, e.getMessage());
+            }
+        }
+
+        return submitAnswer(uid, Dto.SubmitAnswerRequest.builder()
+                .interviewId(interviewId)
+                .questionId(questionId)
+                .questionIndex(questionIndex)
+                .answer(answer)
+                .build());
+    }
+
     public Dto.SubmitCodingAnswerResponse submitCodingAnswer(String uid, Dto.SubmitCodingAnswerRequest req) {
         Interview interview = interviewRepository.findById(req.getInterviewId())
                 .orElseThrow(() -> new RuntimeException("Interview not found"));

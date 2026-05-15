@@ -396,6 +396,120 @@ public class GeminiService {
 
     // ── Resume Parsing ──
 
+    public String transcribeAnswerAudio(byte[] audioBytes,
+                                        String mimeType,
+                                        String question,
+                                        String interviewRole,
+                                        String experienceLevel,
+                                        String userId,
+                                        String interviewId) {
+        if (audioBytes == null || audioBytes.length == 0) {
+            return "";
+        }
+
+        boolean usageRecorded = false;
+        String callType = "audio_transcription";
+        try {
+            AppProperties.Vertex vertex = props.getGemini().getVertex();
+            if (vertex == null || !vertex.isEnabled()) {
+                throw new GeminiUnavailableException("Vertex AI service is not enabled");
+            }
+            if (vertex.getProjectId() == null || vertex.getProjectId().isBlank()) {
+                throw new GeminiUnavailableException("Vertex AI project id is not configured");
+            }
+
+            String safeMime = mimeType == null || mimeType.isBlank() ? "audio/webm" : mimeType;
+            String prompt = """
+                    Transcribe the candidate's spoken interview answer accurately.
+
+                    Interview role: %s
+                    Experience level: %s
+                    Interview question: %s
+
+                    Return only the transcript text. Do not evaluate, summarize, explain, or add labels.
+                    Preserve the candidate's meaning and technical terms. Remove only obvious repeated filler caused by speech recognition noise.
+                    If the audio contains no answer, return an empty string.
+                    """.formatted(
+                    interviewRole == null ? "" : interviewRole,
+                    experienceLevel == null ? "" : experienceLevel,
+                    question == null ? "" : question);
+
+            var parts = new ArrayList<Map<String, Object>>();
+            parts.add(Map.of("text", prompt));
+            parts.add(Map.of("inlineData", Map.of(
+                    "mimeType", safeMime,
+                    "data", Base64.getEncoder().encodeToString(audioBytes)
+            )));
+
+            var body = Map.of(
+                    "contents", List.of(Map.of("role", "user", "parts", parts)),
+                    "generationConfig", Map.of(
+                            "maxOutputTokens", maxOutputTokensFor(callType),
+                            "temperature", 0.0,
+                            "topP", 0.95,
+                            "topK", 40
+                    )
+            );
+
+            String responseStr = webClientBuilder.build()
+                    .post().uri(vertexGenerateContentUrl(vertex))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + vertexAccessToken(vertex))
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(Duration.ofSeconds(60))
+                    .block();
+
+            var json = objectMapper.readTree(responseStr);
+            if (json.has("error")) {
+                String errMsg = json.get("error").get("message").asText();
+                log.error("Gemini audio transcription error: {}", sanitizeSecret(errMsg));
+                recordUsage(userId, interviewId, callType, "ERROR", json.path("usageMetadata"), errMsg);
+                usageRecorded = true;
+                if (isQuotaMessage(errMsg)) {
+                    throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+                }
+                throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
+            }
+
+            var candidates = json.path("candidates");
+            if (!candidates.isArray() || candidates.isEmpty()) {
+                throw new GeminiUnavailableException("AI service returned no transcription.");
+            }
+
+            var text = new StringBuilder();
+            for (var part : candidates.get(0).path("content").path("parts")) {
+                if (part.has("text")) text.append(part.get("text").asText());
+            }
+            recordUsage(userId, interviewId, callType, "SUCCESS", json.path("usageMetadata"), null);
+            usageRecorded = true;
+            return text.toString()
+                    .replaceAll("(?i)^transcript\\s*:\\s*", "")
+                    .trim();
+        } catch (WebClientResponseException e) {
+            recordUsage(userId, interviewId, callType, "ERROR", null,
+                    "HTTP " + e.getStatusCode().value() + ": " +
+                            truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
+            if (isQuotaStatus(e.getStatusCode().value()) || isQuotaMessage(e.getResponseBodyAsString())) {
+                throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+            }
+            throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
+        } catch (RuntimeException e) {
+            if (!usageRecorded) {
+                recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
+            }
+            if (isQuotaMessage(e.getMessage())) {
+                throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+            }
+            throw e;
+        } catch (Exception e) {
+            log.error("Gemini audio transcription failed: {}", sanitizeSecret(e.getMessage()));
+            recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
+            throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
+        }
+    }
+
     public String parseResume(String resumeText) {
         return parseResumeInsights(resumeText).summary();
     }
@@ -1672,6 +1786,7 @@ public String correctTranscript(String transcript, String userId, String intervi
         if (normalized.contains("question_generation")) return 4096;
         if (normalized.contains("transcript_correction")) return 1024;
         if (normalized.contains("feedback"))           return 512;
+        if (normalized.contains("audio_transcription")) return 2048;
         if (normalized.contains("score"))              return 1024;
         if (normalized.contains("analysis"))           return 2048;
         if (normalized.contains("resume_parse"))       return 1024;

@@ -6,8 +6,8 @@ spring:
     name: assessarc-backend
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      max-file-size: 12MB
+      max-request-size: 14MB
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
