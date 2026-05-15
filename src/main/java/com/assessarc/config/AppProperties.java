@@ -19,7 +19,7 @@ public class AppProperties {
     @Data
     public static class Gemini {
         private String apiKey;
-        private String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
+        private String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent";
         private Vertex vertex = new Vertex();
     }
 
@@ -28,7 +28,7 @@ public class AppProperties {
         private boolean enabled = true;
         private String projectId;
         private String location = "us-central1";
-        private String model = "gemini-2.5-flash-lite";
+        private String model = "gemini-2.5-pro";
         private String credentialsPath;
     }
 
