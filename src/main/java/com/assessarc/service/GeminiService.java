@@ -878,10 +878,10 @@ public String correctTranscript(String transcript, String userId, String intervi
                 "Mention ONE concrete thing to improve or add — something they can actually act on.\n" +
                 "No bullet points. No markdown. Conversational spoken style only.";
 
-        return callGemini(prompt,
-                questionGenerationRules.buildInterviewerSystemPrompt(roleLabel, fresher) +
-                " Give short, natural, spoken feedback. Be specific to what they actually said. Sound human.",
-                userId, interviewId, "answer_feedback");
+        String systemPrompt = "You are Sarah, a real human-style " + roleLabel + " interviewer. "
+                + "Give short, natural, spoken feedback only. Be specific to the candidate's actual answer. "
+                + "No markdown, no bullets, no long coaching essay.";
+        return callGeminiWithTemp(prompt, systemPrompt, 0.35, userId, interviewId, "answer_feedback");
     }
 
     // ── Score Calculation ──
@@ -1117,9 +1117,9 @@ public String correctTranscript(String transcript, String userId, String intervi
 
     private int maxOutputTokensFor(String callType) {
         String normalized = callType == null ? "" : callType;
-        if (normalized.contains("question_generation")) return 4096;
-        if (normalized.contains("transcript_correction")) return 1024;
-        if (normalized.contains("feedback"))           return 512;
+        if (normalized.contains("question_generation")) return 3072;
+        if (normalized.contains("transcript_correction")) return 512;
+        if (normalized.contains("feedback"))           return 384;
         if (normalized.contains("audio_transcription")) return 2048;
         if (normalized.contains("score"))              return 1024;
         if (normalized.contains("analysis"))           return 2048;
