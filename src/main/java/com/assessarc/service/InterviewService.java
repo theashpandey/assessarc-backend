@@ -369,6 +369,9 @@ public class InterviewService {
     }
 
     private String cleanCodingQuestionText(String question, String description) {
+        if (description != null && !description.isBlank()) {
+            return firstSentence(description);
+        }
         String text = question == null ? "" : question.trim();
         if (text.isBlank()) return description == null ? "Solve the coding problem." : firstSentence(description);
         String cleaned = text
@@ -609,17 +612,20 @@ public class InterviewService {
                     .build();
         }
 
-        try {
-            String correctedAnswer = geminiService.correctTranscript(answer, uid, interview.getId());
-            if (correctedAnswer != null && !correctedAnswer.isBlank()) {
-                answer = correctedAnswer.trim();
+        boolean fromAudioTranscription = trace != null && "audio_transcription".equals(trace.getSource());
+        if (!fromAudioTranscription) {
+            try {
+                String correctedAnswer = geminiService.correctTranscript(answer, uid, interview.getId());
+                if (correctedAnswer != null && !correctedAnswer.isBlank()) {
+                    answer = correctedAnswer.trim();
+                }
+            } catch (GeminiService.GeminiQuotaException | GeminiService.GeminiUnavailableException e) {
+                log.warn("Transcript correction unavailable for interview {} question {}: {}",
+                        req.getInterviewId(), idx, e.getMessage());
+            } catch (Exception e) {
+                log.warn("Transcript correction failed for interview {} question {}: {}",
+                        req.getInterviewId(), idx, e.getMessage());
             }
-        } catch (GeminiService.GeminiQuotaException | GeminiService.GeminiUnavailableException e) {
-            log.warn("Transcript correction unavailable for interview {} question {}: {}",
-                    req.getInterviewId(), idx, e.getMessage());
-        } catch (Exception e) {
-            log.warn("Transcript correction failed for interview {} question {}: {}",
-                    req.getInterviewId(), idx, e.getMessage());
         }
         if (trace != null) {
             trace.setFinalTranscript(answer);

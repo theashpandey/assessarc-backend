@@ -394,121 +394,149 @@ public class GeminiService {
         }
     }
 
-    // ── Resume Parsing ──
-
     public String transcribeAnswerAudio(byte[] audioBytes,
-                                        String mimeType,
-                                        String question,
-                                        String interviewRole,
-                                        String experienceLevel,
-                                        String userId,
-                                        String interviewId) {
-        if (audioBytes == null || audioBytes.length == 0) {
-            return "";
-        }
+        String mimeType,
+        String question,
+        String interviewRole,
+        String experienceLevel,
+        String userId,
+        String interviewId) {
+if (audioBytes == null || audioBytes.length == 0) {
+return "";
+}
 
-        boolean usageRecorded = false;
-        String callType = "audio_transcription";
-        try {
-            AppProperties.Vertex vertex = props.getGemini().getVertex();
-            if (vertex == null || !vertex.isEnabled()) {
-                throw new GeminiUnavailableException("Vertex AI service is not enabled");
-            }
-            if (vertex.getProjectId() == null || vertex.getProjectId().isBlank()) {
-                throw new GeminiUnavailableException("Vertex AI project id is not configured");
-            }
+boolean usageRecorded = false;
+String callType = "audio_transcription";
+try {
+AppProperties.Vertex vertex = props.getGemini().getVertex();
+if (vertex == null || !vertex.isEnabled()) {
+throw new GeminiUnavailableException("Vertex AI service is not enabled");
+}
+if (vertex.getProjectId() == null || vertex.getProjectId().isBlank()) {
+throw new GeminiUnavailableException("Vertex AI project id is not configured");
+}
 
-            String safeMime = mimeType == null || mimeType.isBlank() ? "audio/webm" : mimeType;
-            String prompt = """
-                    Transcribe the candidate's spoken interview answer accurately.
+String safeMime = mimeType == null || mimeType.isBlank() ? "audio/webm" : mimeType;
+String prompt = """
+You are a literal audio transcriber, not an interviewer and not an answer generator.
 
-                    Interview role: %s
-                    Experience level: %s
-                    Interview question: %s
+Listen to the attached audio and write only the words actually spoken by the candidate.
 
-                    Return only the transcript text. Do not evaluate, summarize, explain, or add labels.
-                    Preserve the candidate's meaning and technical terms. Remove only obvious repeated filler caused by speech recognition noise.
-                    If the audio contains no answer, return an empty string.
-                    """.formatted(
-                    interviewRole == null ? "" : interviewRole,
-                    experienceLevel == null ? "" : experienceLevel,
-                    question == null ? "" : question);
+Interview role: %s
+Experience level: %s
+Interview question: %s
 
-            var parts = new ArrayList<Map<String, Object>>();
-            parts.add(Map.of("text", prompt));
-            parts.add(Map.of("inlineData", Map.of(
-                    "mimeType", safeMime,
-                    "data", Base64.getEncoder().encodeToString(audioBytes)
-            )));
+Critical rules:
+- Do not answer the interview question.
+- Do not infer what the candidate probably meant.
+- Do not complete short answers.
+- Do not paraphrase, summarize, improve grammar, or restructure.
+- Preserve short utterances exactly, even if they are only 1-3 words.
+- Preserve filler words, repetitions, pauses written as words, and incomplete sentences.
+- Preserve the candidate's language/code-switching as spoken.
+- If a word is unclear, write correct possible word for that word only with help of question context.
+- If there is no candidate speech, return an empty string.
 
-            var body = Map.of(
-                    "contents", List.of(Map.of("role", "user", "parts", parts)),
-                    "generationConfig", Map.of(
-                            "maxOutputTokens", maxOutputTokensFor(callType),
-                            "temperature", 0.0,
-                            "topP", 0.95,
-                            "topK", 40
-                    )
-            );
+Output only the transcript text. No labels, no markdown, no notes.
+""".formatted(
+interviewRole == null ? "" : interviewRole,
+experienceLevel == null ? "" : experienceLevel,
+question == null ? "" : question);
 
-            String responseStr = webClientBuilder.build()
-                    .post().uri(vertexGenerateContentUrl(vertex))
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + vertexAccessToken(vertex))
-                    .bodyValue(body)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(60))
-                    .block();
+var parts = new ArrayList<Map<String, Object>>();
+parts.add(Map.of("text", prompt));
+parts.add(Map.of("inlineData", Map.of(
+"mimeType", safeMime,
+"data", Base64.getEncoder().encodeToString(audioBytes)
+)));
 
-            var json = objectMapper.readTree(responseStr);
-            if (json.has("error")) {
-                String errMsg = json.get("error").get("message").asText();
-                log.error("Gemini audio transcription error: {}", sanitizeSecret(errMsg));
-                recordUsage(userId, interviewId, callType, "ERROR", json.path("usageMetadata"), errMsg);
-                usageRecorded = true;
-                if (isQuotaMessage(errMsg)) {
-                    throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
-                }
-                throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
-            }
+var body = Map.of(
+"contents", List.of(Map.of("role", "user", "parts", parts)),
+"generationConfig", Map.of(
+"maxOutputTokens", maxOutputTokensFor(callType),
+"temperature", 0.0,
+"topP", 0.95,
+"topK", 40
+)
+);
 
-            var candidates = json.path("candidates");
-            if (!candidates.isArray() || candidates.isEmpty()) {
-                throw new GeminiUnavailableException("AI service returned no transcription.");
-            }
+String responseStr = webClientBuilder.build()
+.post().uri(vertexGenerateContentUrl(vertex))
+.header("Content-Type", "application/json")
+.header("Authorization", "Bearer " + vertexAccessToken(vertex))
+.bodyValue(body)
+.retrieve()
+.bodyToMono(String.class)
+.timeout(Duration.ofSeconds(60))
+.block();
 
-            var text = new StringBuilder();
-            for (var part : candidates.get(0).path("content").path("parts")) {
-                if (part.has("text")) text.append(part.get("text").asText());
-            }
-            recordUsage(userId, interviewId, callType, "SUCCESS", json.path("usageMetadata"), null);
-            usageRecorded = true;
-            return text.toString()
-                    .replaceAll("(?i)^transcript\\s*:\\s*", "")
-                    .trim();
-        } catch (WebClientResponseException e) {
-            recordUsage(userId, interviewId, callType, "ERROR", null,
-                    "HTTP " + e.getStatusCode().value() + ": " +
-                            truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
-            if (isQuotaStatus(e.getStatusCode().value()) || isQuotaMessage(e.getResponseBodyAsString())) {
-                throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
-            }
-            throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
-        } catch (RuntimeException e) {
-            if (!usageRecorded) {
-                recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
-            }
-            if (isQuotaMessage(e.getMessage())) {
-                throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
-            }
-            throw e;
-        } catch (Exception e) {
-            log.error("Gemini audio transcription failed: {}", sanitizeSecret(e.getMessage()));
-            recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
-            throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
-        }
-    }
+var json = objectMapper.readTree(responseStr);
+if (json.has("error")) {
+String errMsg = json.get("error").get("message").asText();
+log.error("Gemini audio transcription error: {}", sanitizeSecret(errMsg));
+recordUsage(userId, interviewId, callType, "ERROR", json.path("usageMetadata"), errMsg);
+usageRecorded = true;
+if (isQuotaMessage(errMsg)) {
+throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+}
+throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
+}
+
+var candidates = json.path("candidates");
+if (!candidates.isArray() || candidates.isEmpty()) {
+throw new GeminiUnavailableException("AI service returned no transcription.");
+}
+
+var text = new StringBuilder();
+for (var part : candidates.get(0).path("content").path("parts")) {
+if (part.has("text")) text.append(part.get("text").asText());
+}
+recordUsage(userId, interviewId, callType, "SUCCESS", json.path("usageMetadata"), null);
+usageRecorded = true;
+return stripAudioTranscriptionArtifacts(text.toString());
+} catch (WebClientResponseException e) {
+recordUsage(userId, interviewId, callType, "ERROR", null,
+"HTTP " + e.getStatusCode().value() + ": " +
+truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
+if (isQuotaStatus(e.getStatusCode().value()) || isQuotaMessage(e.getResponseBodyAsString())) {
+throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+}
+throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
+} catch (RuntimeException e) {
+if (!usageRecorded) {
+recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
+}
+if (isQuotaMessage(e.getMessage())) {
+throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+}
+throw e;
+} catch (Exception e) {
+log.error("Gemini audio transcription failed: {}", sanitizeSecret(e.getMessage()));
+recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
+throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
+}
+}
+
+private String stripAudioTranscriptionArtifacts(String value) {
+if (value == null) return "";
+String text = value
+.replaceAll("(?i)^\\s*(transcript|candidate|answer|spoken words)\\s*:\\s*", "")
+.replaceAll("```[a-zA-Z]*", "")
+.replace("```", "")
+.trim();
+if ((text.startsWith("\"") && text.endsWith("\"")) || (text.startsWith("'") && text.endsWith("'"))) {
+text = text.substring(1, text.length() - 1).trim();
+}
+if (text.equalsIgnoreCase("empty string")
+|| text.equalsIgnoreCase("(empty)")
+|| text.equalsIgnoreCase("no speech")
+|| text.equalsIgnoreCase("no candidate speech")
+|| text.equalsIgnoreCase("no answer")) {
+return "";
+}
+return text;
+}
+    // ── Resume Parsing ──
 
     public String parseResume(String resumeText) {
         return parseResumeInsights(resumeText).summary();
@@ -676,6 +704,7 @@ public class GeminiService {
                 "CODING formatting rules:\n" +
                 "- question must be ONLY a short title/instruction, one sentence max.\n" +
                 "- Do NOT put labels like Problem Description, Expected Output, Examples, or Test Cases inside question.\n" +
+                "- Every Test example must be consistent with the problem description\n" +
                 "- Put the full statement only in codingData.description.\n" +
                 "- Put every sample input/output only in codingData.testCases.\n" +
                 "- Put the return/output requirement only in codingData.expectedOutput.\n\n" +
