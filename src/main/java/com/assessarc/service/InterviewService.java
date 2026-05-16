@@ -232,6 +232,7 @@ public class InterviewService {
             result.add(builder.build());
         }
 
+        result = ensureOpeningIntroductionQuestion(result, interviewRole, experienceLevel, allowedCategories, seenQuestionTexts);
         result = enforceCodingPlan(result, interviewRole, durationMinutes, allowedCategories, seenQuestionTexts);
 
         if (result.isEmpty()) {
@@ -240,6 +241,59 @@ public class InterviewService {
 
         log.info("Final question set: {} questions", result.size());
         return result;
+    }
+
+    private List<Dto.QuestionDto> ensureOpeningIntroductionQuestion(List<Dto.QuestionDto> questions,
+                                                                     String role,
+                                                                     String experienceLevel,
+                                                                     List<String> allowedCategories,
+                                                                     Set<String> seenQuestionTexts) {
+        List<Dto.QuestionDto> reordered = new ArrayList<>(questions);
+        Optional<Dto.QuestionDto> generatedIntro = reordered.stream()
+                .filter(q -> !"coding".equals(q.getType()))
+                .filter(q -> isOpeningIntroductionQuestion(q.getQuestion()))
+                .findFirst();
+
+        Dto.QuestionDto intro = generatedIntro.orElseGet(() ->
+                openingIntroductionQuestion(role, experienceLevel, allowedCategories, seenQuestionTexts));
+        generatedIntro.ifPresent(reordered::remove);
+        reordered.add(0, intro);
+        return reordered;
+    }
+
+    private boolean isOpeningIntroductionQuestion(String question) {
+        String normalized = normalizeQuestionText(question);
+        if (normalized.isBlank()) return false;
+        return (normalized.contains("introduce yourself")
+                || normalized.contains("tell me about yourself")
+                || normalized.contains("walk me through your background")
+                || normalized.contains("start with your introduction"))
+                && !normalized.contains("project");
+    }
+
+    private Dto.QuestionDto openingIntroductionQuestion(String role, String experienceLevel,
+                                                        List<String> allowedCategories,
+                                                        Set<String> seenQuestionTexts) {
+        String roleLabel = geminiService.roleLabel(role);
+        boolean fresher = geminiService.isFresher(experienceLevel);
+        String question = fresher
+                ? "Let's start with you. Could you introduce yourself and tell me what made you interested in the " + roleLabel + " role?"
+                : "Let's start with a quick introduction. Could you walk me through your background and the kind of " + roleLabel + " work you've been doing?";
+        String normalized = normalizeQuestionText(question);
+        if (!seenQuestionTexts.add(normalized)) {
+            question = fresher
+                    ? "Before we get technical, tell me a little about yourself and one skill or project you're most confident about for this " + roleLabel + " interview."
+                    : "Before we go deeper, give me a brief overview of your experience and the work you feel best represents you as a " + roleLabel + ".";
+        }
+        String category = allowedCategories.contains("behavioral") ? "behavioral"
+                : allowedCategories.stream().findFirst().orElse("problem_solving");
+        return Dto.QuestionDto.builder()
+                .id("ai_" + UUID.randomUUID())
+                .question(question)
+                .category(category)
+                .difficulty("easy")
+                .type("text")
+                .build();
     }
 
     private List<Dto.QuestionDto> enforceCodingPlan(List<Dto.QuestionDto> questions, String role,

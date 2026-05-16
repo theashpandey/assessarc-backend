@@ -641,21 +641,39 @@ return text;
         int behavioralCount;
 
         if (fresher) {
-            fundamentalsCount = Math.round(textCount * 0.40f);
-            trickyCount       = Math.round(textCount * 0.15f);
-            scenarioCount     = Math.round(textCount * 0.25f);
+            fundamentalsCount = Math.round(textCount * 0.45f);
+            trickyCount       = Math.round(textCount * 0.20f);
+            scenarioCount     = Math.round(textCount * 0.15f);
             projectCount      = Math.round(textCount * 0.10f);
             behavioralCount   = textCount - fundamentalsCount - trickyCount - scenarioCount - projectCount;
         } else {
-            fundamentalsCount = Math.round(textCount * 0.20f);
+            fundamentalsCount = Math.round(textCount * 0.25f);
             trickyCount       = Math.round(textCount * 0.15f);
             scenarioCount     = Math.round(textCount * 0.25f);
-            projectCount      = Math.round(textCount * 0.25f);
+            projectCount      = Math.round(textCount * 0.20f);
             behavioralCount   = textCount - fundamentalsCount - trickyCount - scenarioCount - projectCount;
+        }
+        if (textCount > 0 && behavioralCount < 1) {
+            if (projectCount > 1) projectCount--;
+            else if (scenarioCount > 1) scenarioCount--;
+            else if (trickyCount > 1) trickyCount--;
+            else fundamentalsCount = Math.max(0, fundamentalsCount - 1);
+            behavioralCount = 1;
         }
 
         String depthInstructions = questionGenerationRules.buildDepthInstructions(normalizedRole, fresher, expLabel,
                 textCount, fundamentalsCount, trickyCount, scenarioCount, projectCount, behavioralCount);
+        boolean initialGeneration = callType == null || callType.contains("initial");
+        String flowInstructions = initialGeneration
+                ? "REAL INTERVIEW FLOW RULES:\n"
+                + "- The first TEXT question must be a short warm-up introduction question, like a real interviewer asking the candidate to introduce themselves for this role.\n"
+                + "- After the introduction, move through fundamentals, concept understanding, tricky/gotcha checks, small scenarios, resume/project depth, and behavioral questions.\n"
+                : "REAL INTERVIEW CONTINUATION RULES:\n"
+                + "- Continue from the questions already asked. Do not ask another introduction question.\n"
+                + "- Keep the remaining questions varied across fundamentals, concept understanding, tricky/gotcha checks, scenarios, resume/project depth, and behavioral judgment.\n";
+        flowInstructions += "- Do not over-personalize every question from the resume. Resume/project questions are only one part of the interview.\n"
+                + "- For freshers, prioritize college-placement style fundamentals, concept clarity, simple tricky questions, beginner coding/problem-solving, and project explanation.\n"
+                + "- For freshers, avoid production ownership language unless their resume clearly shows real work experience.\n\n";
 
         String prompt = String.format(
                 "Target interview role: %s\n" +
@@ -666,6 +684,7 @@ return text;
                 "Generate exactly %d TEXT questions and %d CODING questions.\n" +
                 "Allowed categories: %s\n\n" +
                 "%s\n\n" +
+                "%s" +
                 "IMPORTANT — QUESTION QUALITY RULES:\n" +
                 "- Include 40 percent trending, most-asked questions from top tech companies Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. relevant to this role and experience level.\n" +
                 "- Each question must sound like a real human interviewer saying it out loud — natural, conversational, not robotic.\n" +
@@ -692,6 +711,7 @@ return text;
                 roleLabel, expLabel, resumeSummary, existing,
                 depthInstructions,
                 textCount, codingCount, allowed, codingInstructions,
+                flowInstructions,
                 codingLanguageForRole(normalizedRole),
                 allowed
         );

@@ -4,6 +4,10 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.assessarc.model.GeminiUsageLog;
+import com.google.api.core.ApiFutureCallback;
+import com.google.api.core.ApiFutures;
+import com.google.cloud.firestore.WriteResult;
+import com.google.common.util.concurrent.MoreExecutors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
@@ -22,17 +26,23 @@ public class GeminiUsageRepository {
     private final Firestore firestore;
 
     public void save(GeminiUsageLog usageLog) {
-        try {
-            if (usageLog.getId() == null || usageLog.getId().isBlank()) {
-                usageLog.setId(UUID.randomUUID().toString());
-            }
-            firestore.collection(COLLECTION).document(usageLog.getId()).set(usageLog).get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Interrupted while saving Gemini usage log");
-        } catch (ExecutionException e) {
-            log.warn("Failed to save Gemini usage log: {}", e.getMessage());
+        if (usageLog.getId() == null || usageLog.getId().isBlank()) {
+            usageLog.setId(UUID.randomUUID().toString());
         }
+        ApiFutures.addCallback(
+                firestore.collection(COLLECTION).document(usageLog.getId()).set(usageLog),
+                new ApiFutureCallback<>() {
+                    @Override
+                    public void onFailure(Throwable t) {
+                        log.warn("Failed to save Gemini usage log: {}", t.getMessage());
+                    }
+
+                    @Override
+                    public void onSuccess(WriteResult result) {
+                        // Monitoring write is intentionally fire-and-forget.
+                    }
+                },
+                MoreExecutors.directExecutor());
     }
 
     public List<GeminiUsageLog> findBetween(long fromInclusive, long toExclusive) {
