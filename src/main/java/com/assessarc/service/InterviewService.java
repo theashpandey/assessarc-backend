@@ -409,6 +409,7 @@ public class InterviewService {
                 || "full_stack_developer".equals(normalized) || "nodejs_developer".equals(normalized)
                 || "angular_developer".equals(normalized)) return "javascript";
         if ("qa_automation_engineer".equals(normalized) || "sdet".equals(normalized)) return "java";
+        if ("mobile_developer".equals(normalized)) return "kotlin";
         return "java";
     }
 
@@ -419,6 +420,7 @@ public class InterviewService {
             case "sql" -> "SQL";
             case "cpp" -> "C++";
             case "csharp" -> "C#";
+            case "kotlin" -> "Kotlin";
             default -> "Java";
         };
     }
