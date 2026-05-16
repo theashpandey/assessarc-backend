@@ -1,5 +1,8 @@
 package com.assessarc.service;
 
+import org.springframework.stereotype.Service;
+
+@Service
 public class QuestionGenerationRules {
 
   public String getCodingInstructions(int durationMinutes) {
