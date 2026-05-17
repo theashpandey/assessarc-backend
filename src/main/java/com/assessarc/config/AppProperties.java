@@ -57,7 +57,7 @@ public class AppProperties {
                 "https://assessarc.vercel.app",
                 "https://assessarc.app",
                 "https://www.assessarc.app",
-                "https://assessarcapp.onrender.com",
+                "https://assessarc-c7hq.onrender.com",
                 "https://www.assessarc.com",
                 "https://assessarc.com"
         );
