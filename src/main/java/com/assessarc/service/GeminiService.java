@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -375,7 +376,6 @@ public class GeminiService {
             throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
         }
     }
-
     public String transcribeAnswerAudio(byte[] audioBytes,
         String mimeType,
         String question,
@@ -383,140 +383,171 @@ public class GeminiService {
         String experienceLevel,
         String userId,
         String interviewId) {
-if (audioBytes == null || audioBytes.length == 0) {
-return "";
-}
 
-boolean usageRecorded = false;
-String callType = "audio_transcription";
-try {
-AppProperties.Vertex vertex = props.getGemini().getVertex();
-if (vertex == null || !vertex.isEnabled()) {
-throw new GeminiUnavailableException("Vertex AI service is not enabled");
-}
-if (vertex.getProjectId() == null || vertex.getProjectId().isBlank()) {
-throw new GeminiUnavailableException("Vertex AI project id is not configured");
-}
+    if (audioBytes == null || audioBytes.length == 0) {
+        return "";
+    }
 
-String safeMime = mimeType == null || mimeType.isBlank() ? "audio/webm" : mimeType;
-String prompt = """
-You are a literal audio transcriber, not an interviewer and not an answer generator.
+    boolean usageRecorded = false;
+    String callType = "audio_transcription";
 
-Listen to the attached audio and write only the words actually spoken by the candidate.
+    try {
+        AppProperties.Vertex vertex = props.getGemini().getVertex();
+        if (vertex == null || !vertex.isEnabled()) {
+            throw new GeminiUnavailableException("Vertex AI service is not enabled");
+        }
+        if (vertex.getProjectId() == null || vertex.getProjectId().isBlank()) {
+            throw new GeminiUnavailableException("Vertex AI project id is not configured");
+        }
 
-Interview role: %s
-Experience level: %s
-Interview question: %s
+        String safeMime = mimeType == null || mimeType.isBlank() ? "audio/webm" : mimeType;
 
-Critical rules:
-- Do not answer the interview question.
-- Do not infer what the candidate probably meant.
-- Do not complete short answers.
-- Do not paraphrase, summarize, improve grammar, or restructure.
-- Preserve short utterances exactly, even if they are only 1-3 words.
-- Preserve filler words, repetitions, pauses written as words, and incomplete sentences.
-- Preserve the candidate's language/code-switching as spoken.
-- If a word is unclear, write correct possible word for that word only with help of question context.
-- If there is no candidate speech, return an empty string.
+        // NO question/role/context in prompt — prevents hallucination when audio is silent
+        String prompt = """
+                You are a strict audio transcription engine. Your ONLY job is converting speech to text.
 
-Output only the transcript text. No labels, no markdown, no notes.
-""".formatted(
-interviewRole == null ? "" : interviewRole,
-experienceLevel == null ? "" : experienceLevel,
-question == null ? "" : question);
+                Rules:
+                - Transcribe ONLY the words actually spoken in the audio.
+                - If the audio contains silence, background noise, music, or no human speech, output exactly: [EMPTY]
+                - Do NOT generate, infer, complete, summarize, or answer anything.
+                - Do NOT use your own knowledge of any topic under any circumstance.
+                - Preserve filler words, repetitions, incomplete sentences, and code-switching exactly as spoken.
+                - If a word is unclear, write the most phonetically likely word — do not guess meaning.
+                - Output only the raw transcript text. No labels, no markdown, no explanation.
+                """;
 
-var parts = new ArrayList<Map<String, Object>>();
-parts.add(Map.of("text", prompt));
-parts.add(Map.of("inlineData", Map.of(
-"mimeType", safeMime,
-"data", Base64.getEncoder().encodeToString(audioBytes)
-)));
+        var parts = new ArrayList<Map<String, Object>>();
+        parts.add(Map.of("text", prompt));
+        parts.add(Map.of("inlineData", Map.of(
+                "mimeType", safeMime,
+                "data", Base64.getEncoder().encodeToString(audioBytes)
+        )));
 
-var body = Map.of(
-"contents", List.of(Map.of("role", "user", "parts", parts)),
-"generationConfig", Map.of(
-"maxOutputTokens", maxOutputTokensFor(callType),
-"temperature", 0.0,
-"topP", 0.95,
-"topK", 40
-)
-);
+        var body = Map.of(
+                "contents", List.of(Map.of("role", "user", "parts", parts)),
+                "generationConfig", Map.of(
+                        "maxOutputTokens", maxOutputTokensFor(callType),
+                        "temperature", 0.0,
+                        "topP", 1.0,
+                        "topK", 1        // most deterministic — least likely to hallucinate
+                )
+        );
 
-String responseStr = webClientBuilder.build()
-.post().uri(vertexGenerateContentUrl(vertex))
-.header("Content-Type", "application/json")
-.header("Authorization", "Bearer " + vertexAccessToken(vertex))
-.bodyValue(body)
-.retrieve()
-.bodyToMono(String.class)
-.timeout(Duration.ofSeconds(60))
-.block();
+        String responseStr = webClientBuilder.build()
+                .post().uri(vertexGenerateContentUrl(vertex))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + vertexAccessToken(vertex))
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(Duration.ofSeconds(60))
+                .block();
 
-var json = objectMapper.readTree(responseStr);
-if (json.has("error")) {
-String errMsg = json.get("error").get("message").asText();
-log.error("Gemini audio transcription error: {}", sanitizeSecret(errMsg));
-recordUsage(userId, interviewId, callType, "ERROR", json.path("usageMetadata"), errMsg);
-usageRecorded = true;
-if (isQuotaMessage(errMsg)) {
-throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
-}
-throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
-}
+        var json = objectMapper.readTree(responseStr);
+        if (json.has("error")) {
+            String errMsg = json.get("error").get("message").asText();
+            log.error("Gemini audio transcription error: {}", sanitizeSecret(errMsg));
+            recordUsage(userId, interviewId, callType, "ERROR", json.path("usageMetadata"), errMsg);
+            usageRecorded = true;
+            if (isQuotaMessage(errMsg)) {
+                throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+            }
+            throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
+        }
 
-var candidates = json.path("candidates");
-if (!candidates.isArray() || candidates.isEmpty()) {
-throw new GeminiUnavailableException("AI service returned no transcription.");
-}
+        var candidates = json.path("candidates");
+        if (!candidates.isArray() || candidates.isEmpty()) {
+            throw new GeminiUnavailableException("AI service returned no transcription.");
+        }
 
-var text = new StringBuilder();
-for (var part : candidates.get(0).path("content").path("parts")) {
-if (part.has("text")) text.append(part.get("text").asText());
-}
-recordUsage(userId, interviewId, callType, "SUCCESS", json.path("usageMetadata"), null);
-usageRecorded = true;
-return stripAudioTranscriptionArtifacts(text.toString());
-} catch (WebClientResponseException e) {
-recordUsage(userId, interviewId, callType, "ERROR", null,
-"HTTP " + e.getStatusCode().value() + ": " +
-truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
-if (isQuotaStatus(e.getStatusCode().value()) || isQuotaMessage(e.getResponseBodyAsString())) {
-throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
-}
-throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
-} catch (RuntimeException e) {
-if (!usageRecorded) {
-recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
-}
-if (isQuotaMessage(e.getMessage())) {
-throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
-}
-throw e;
-} catch (Exception e) {
-log.error("Gemini audio transcription failed: {}", sanitizeSecret(e.getMessage()));
-recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
-throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
-}
+        var text = new StringBuilder();
+        for (var part : candidates.get(0).path("content").path("parts")) {
+            if (part.has("text")) text.append(part.get("text").asText());
+        }
+
+        recordUsage(userId, interviewId, callType, "SUCCESS", json.path("usageMetadata"), null);
+        usageRecorded = true;
+
+        String cleaned = stripAudioTranscriptionArtifacts(text.toString());
+        return guardHallucinatedAnswer(cleaned, question);
+
+    } catch (WebClientResponseException e) {
+        recordUsage(userId, interviewId, callType, "ERROR", null,
+                "HTTP " + e.getStatusCode().value() + ": " +
+                        truncate(sanitizeSecret(e.getResponseBodyAsString()), 180));
+        if (isQuotaStatus(e.getStatusCode().value()) || isQuotaMessage(e.getResponseBodyAsString())) {
+            throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+        }
+        throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
+    } catch (RuntimeException e) {
+        if (!usageRecorded) {
+            recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
+        }
+        if (isQuotaMessage(e.getMessage())) {
+            throw new GeminiQuotaException("AI quota is temporarily exhausted. Please try again later.");
+        }
+        throw e;
+    } catch (Exception e) {
+        log.error("Gemini audio transcription failed: {}", sanitizeSecret(e.getMessage()));
+        recordUsage(userId, interviewId, callType, "ERROR", null, sanitizeSecret(e.getMessage()));
+        throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
+    }
 }
 
 private String stripAudioTranscriptionArtifacts(String value) {
-if (value == null) return "";
-String text = value
-.replaceAll("(?i)^\\s*(transcript|candidate|answer|spoken words)\\s*:\\s*", "")
-.replaceAll("```[a-zA-Z]*", "")
-.replace("```", "")
-.trim();
-if ((text.startsWith("\"") && text.endsWith("\"")) || (text.startsWith("'") && text.endsWith("'"))) {
-text = text.substring(1, text.length() - 1).trim();
+    if (value == null) return "";
+    String text = value
+            .replaceAll("(?i)^\\s*(transcript|candidate|answer|spoken words)\\s*:\\s*", "")
+            .replaceAll("```[a-zA-Z]*", "")
+            .replace("```", "")
+            .trim();
+
+    // Unwrap surrounding quotes if present
+    if ((text.startsWith("\"") && text.endsWith("\""))
+            || (text.startsWith("'") && text.endsWith("'"))) {
+        text = text.substring(1, text.length() - 1).trim();
+    }
+
+    // Sentinel value returned by model when no speech detected
+    if (text.equals("[EMPTY]")
+            || text.equalsIgnoreCase("empty string")
+            || text.equalsIgnoreCase("(empty)")
+            || text.equalsIgnoreCase("no speech")
+            || text.equalsIgnoreCase("no candidate speech")
+            || text.equalsIgnoreCase("no answer")) {
+        return "";
+    }
+
+    return text;
 }
-if (text.equalsIgnoreCase("empty string")
-|| text.equalsIgnoreCase("(empty)")
-|| text.equalsIgnoreCase("no speech")
-|| text.equalsIgnoreCase("no candidate speech")
-|| text.equalsIgnoreCase("no answer")) {
-return "";
-}
-return text;
+
+/**
+ * Last-resort guard: if the transcript looks like a hallucinated answer
+ * (very long + shares too many keywords with the question), discard it.
+ * This should rarely fire after the prompt fix, but acts as a safety net.
+ */
+private String guardHallucinatedAnswer(String transcript, String question) {
+    if (transcript == null || transcript.isBlank()) return "";
+    if (question == null || question.isBlank()) return transcript;
+
+    // Short transcripts are almost certainly real speech
+    if (transcript.length() <= 300) return transcript;
+
+    String lowerTranscript = transcript.toLowerCase();
+    long matchCount = Arrays.stream(question.toLowerCase().split("\\W+"))
+            .filter(w -> w.length() > 5)
+            .filter(lowerTranscript::contains)
+            .count();
+
+    // Heuristic: >5 distinct long keywords from the question found in a long
+    // transcript → almost certainly a hallucinated answer, not real speech
+    if (matchCount > 5) {
+        log.warn("Discarding likely hallucinated transcription: length={}, keywordMatches={}",
+                transcript.length(), matchCount);
+        return "";
+    }
+
+    return transcript;
 }
     // ── Resume Parsing ──
 
@@ -894,106 +925,174 @@ public String correctTranscript(String transcript, String userId, String intervi
 
     public Map<String, Object> calculateScores(List<Map<String, String>> qaList, String role, String experienceLevel,
         List<String> allowedCategories, String userId, String interviewId) {
-      boolean fresher = isFresher(experienceLevel);
-      String roleLabel = roleLabel(role);
+    boolean fresher = isFresher(experienceLevel);
+    String roleLabel = roleLabel(role);
 
-      var sb = new StringBuilder();
+    // ── Separate answered vs unanswered categories ──
+    Set<String> answeredCategories = qaList.stream()
+            .filter(qa -> {
+                String ans = qa.getOrDefault("answer", "");
+                return ans != null && !ans.isBlank();
+            })
+            .map(qa -> qa.get("category"))
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
 
-      // ── Per-answer block ──
-      sb.append("You are evaluating a mock interview for a ").append(roleLabel).append(" candidate.\n");
-      sb.append("Experience level: ").append(experienceLabel(experienceLevel)).append("\n\n");
-      sb.append("Below are the interview questions and the candidate's actual answers.\n");
-      sb.append("Read each answer carefully and judge it STRICTLY on its own merit.\n\n");
-      sb.append("=== INTERVIEW RESPONSES ===\n\n");
+    List<String> scorableCategories = allowedCategories.stream()
+            .filter(answeredCategories::contains)
+            .collect(Collectors.toList());
 
-      int qNum = 1;
-      for (var qa : qaList) {
-        String catLabel = categoryLabel(qa.get("category"));
-        String answer = qa.getOrDefault("answer", "");
-        String answerText = (answer == null || answer.isBlank()) ? "(no answer given — candidate was silent or skipped)"
-            : answer.trim();
-        sb.append("Q").append(qNum).append(" [").append(catLabel).append("]: ").append(qa.get("question")).append("\n");
-        sb.append("Answer: ").append(answerText).append("\n\n");
-        qNum++;
-      }
+    List<String> unansweredCategories = allowedCategories.stream()
+            .filter(c -> !answeredCategories.contains(c))
+            .collect(Collectors.toList());
 
-      // ── Scoring rubric with hard anchors ──
-      sb.append("=== SCORING RUBRIC (MANDATORY — READ BEFORE SCORING) ===\n\n");
-      sb.append("Score range is 0–100. Use the FULL range. These are HARD anchors — match them exactly:\n\n");
-
-      sb.append("0  → No answer, completely wrong, or total nonsense. Candidate had no idea.\n");
-      sb.append(
-          "0–15 → Very weak. Candidate showed a vague or incorrect understanding. Major gaps. Buzzwords without substance.\n");
-      sb.append(
-          "15–30 → Below average. Partial understanding but significant gaps or confusion. Would NOT pass a real interview screening.\n");
-      sb.append(
-          "30–45 → Average. Some correct points but incomplete, missing key concepts, or lacking depth. Borderline pass.\n");
-      sb.append(
-          "45–60 → Good. Correct understanding, reasonable depth. Minor gaps. Would likely pass a real interview round.\n");
-      sb.append("60–88 → Strong. Clear, accurate, well-reasoned answer. Covers the key points confidently.\n");
-      sb.append(
-          "89–100 → Exceptional. Deep insight, nuance, tradeoffs, real-world awareness. Rare — only for truly outstanding answers.\n\n");
-
-      sb.append("CRITICAL RULES:\n");
-      sb.append(
-          "- If the answer is wrong direction, off-topic, or misunderstands the question → score MUST be below 1.\n");
-      sb.append("- If the answer is partially correct but missing the core concept → score MUST be below 15.\n");
-      sb.append("- If the candidate says 'I don't know' or gives a very vague guess → score MUST be below 0.\n");
-      sb.append("- Do NOT reward effort, length, or confidence if the content is wrong.\n");
-      sb.append("- Do NOT assume the candidate meant something correct if they said something wrong.\n");
-      sb.append("- Scores of 70+ must be EARNED by clear, accurate, reasonably complete answers.\n");
-      sb.append("- Scores above 85 are rare. Only give them if the answer is genuinely impressive.\n\n");
-
-      // ── Experience-level context ──
-      if (fresher) {
-        sb.append("EXPERIENCE CONTEXT: This is a FRESHER. Score on conceptual clarity and fundamentals.\n");
-        sb.append("A fresher who explains a concept correctly in simple terms deserves a fair score.\n");
-        sb.append(
-            "A fresher who says something completely wrong or irrelevant still scores below 30 — being a fresher is not an excuse for a wrong answer.\n\n");
-      } else {
-        sb.append("EXPERIENCE CONTEXT: This is an EXPERIENCED candidate (").append(experienceLabel(experienceLevel))
-            .append(").\n");
-        sb.append(
-            "Hold them to a higher standard. Vague or surface-level answers from an experienced candidate score below 45.\n");
-        sb.append(
-            "They are expected to show depth, tradeoffs, and real-world reasoning — not just textbook definitions.\n\n");
-      }
-
-      // ── Output format ──
-      sb.append("=== OUTPUT FORMAT ===\n\n");
-      sb.append("First score each dimension based on the answers above:\n");
-      sb.append("- technical: role-specific technical knowledge and accuracy\n");
-      sb.append("- communication: how clearly and coherently they expressed their answers\n");
-      sb.append("- problemSolving: logical thinking, structured reasoning, approach to problems\n");
-      sb.append("- roleDepth: depth of understanding specific to the ").append(roleLabel).append(" role\n");
-      sb.append("- overall: honest weighted average of all dimensions\n\n");
-      sb.append("Also score each category from the interview:\n");
-      sb.append("Allowed category keys: ").append(String.join(", ", allowedCategories)).append("\n\n");
-      sb.append("Return ONLY valid JSON, no markdown, no explanation:\n");
-      sb.append("{\"technical\":45,\"communication\":60,\"problemSolving\":38,\"roleDepth\":42,\"overall\":46,\n");
-      sb.append("\"categories\":{\"")
-          .append(allowedCategories.isEmpty() ? "problem_solving" : allowedCategories.get(0));
-      sb.append("\":40}}\n\n");
-      sb.append("Do not add any text outside the JSON object.");
-
-      String systemPrompt = "You are a brutally honest, strict interview evaluator at a top product-based company like Google or Amazon. "
-          + "Your job is to score candidates accurately — not to make them feel good. "
-          + "You have seen hundreds of interviews. You know exactly what a wrong answer looks like versus a correct one. "
-          + "You NEVER inflate scores. A wrong answer is a wrong answer regardless of how confidently it was said. "
-          + "You use the full 0–100 range. Weak answers get low scores. Only strong answers get high scores. "
-          + "Return only valid JSON.";
-
-      try {
-        String raw = callGeminiWithTemp(sb.toString(), systemPrompt, 0.1, // very low temp — deterministic, strict
-                                                                          // scoring
-            userId, interviewId, "score_calculation");
-        return parseJsonObjectOrThrow(raw);
-      } catch (GeminiQuotaException | GeminiUnavailableException e) {
-        log.warn("Gemini unavailable while scoring: {}", e.getMessage());
-        throw e;
-      }
+    // ── Edge case: user answered nothing ──
+    if (scorableCategories.isEmpty()) {
+        Map<String, Object> zeroScores = new HashMap<>();
+        zeroScores.put("technical", 0);
+        zeroScores.put("communication", 0);
+        zeroScores.put("problemSolving", 0);
+        zeroScores.put("roleDepth", 0);
+        zeroScores.put("overall", 0);
+        Map<String, Integer> zeroCats = new HashMap<>();
+        allowedCategories.forEach(c -> zeroCats.put(c, 0));
+        zeroScores.put("categories", zeroCats);
+        return zeroScores;
     }
 
+    var sb = new StringBuilder();
+
+    // ── Per-answer block — only answered questions ──
+    sb.append("You are evaluating a mock interview for a ").append(roleLabel).append(" candidate.\n");
+    sb.append("Experience level: ").append(experienceLabel(experienceLevel)).append("\n\n");
+    sb.append("Below are the interview questions and the candidate's actual answers.\n");
+    sb.append("Read each answer carefully and judge it STRICTLY on its own merit.\n\n");
+    sb.append("=== INTERVIEW RESPONSES ===\n\n");
+
+    int qNum = 1;
+    for (var qa : qaList) {
+        String answer = qa.getOrDefault("answer", "");
+        String answerText = (answer == null || answer.isBlank())
+                ? "(no answer given — candidate was silent or skipped)"
+                : answer.trim();
+        String catLabel = categoryLabel(qa.get("category"));
+        sb.append("Q").append(qNum).append(" [").append(catLabel).append("]: ")
+                .append(qa.get("question")).append("\n");
+        sb.append("Answer: ").append(answerText).append("\n\n");
+        qNum++;
+    }
+
+    // ── Scoring rubric with hard anchors ──
+    sb.append("=== SCORING RUBRIC (MANDATORY — READ BEFORE SCORING) ===\n\n");
+    sb.append("Score range is 0–100. Use the FULL range. These are HARD anchors — match them exactly:\n\n");
+    sb.append("0  → No answer, completely wrong, or total nonsense. Candidate had no idea.\n");
+    sb.append("0–15 → Very weak. Candidate showed a vague or incorrect understanding. Major gaps. Buzzwords without substance.\n");
+    sb.append("15–30 → Below average. Partial understanding but significant gaps or confusion. Would NOT pass a real interview screening.\n");
+    sb.append("30–45 → Average. Some correct points but incomplete, missing key concepts, or lacking depth. Borderline pass.\n");
+    sb.append("45–60 → Good. Correct understanding, reasonable depth. Minor gaps. Would likely pass a real interview round.\n");
+    sb.append("60–88 → Strong. Clear, accurate, well-reasoned answer. Covers the key points confidently.\n");
+    sb.append("89–100 → Exceptional. Deep insight, nuance, tradeoffs, real-world awareness. Rare — only for truly outstanding answers.\n\n");
+
+    sb.append("CRITICAL RULES:\n");
+    sb.append("- If the answer is wrong direction, off-topic, or misunderstands the question → score MUST be below 1.\n");
+    sb.append("- If the answer is partially correct but missing the core concept → score MUST be below 15.\n");
+    sb.append("- If the candidate says 'I don't know' or gives a very vague guess → score MUST be below 0.\n");
+    sb.append("- Do NOT reward effort, length, or confidence if the content is wrong.\n");
+    sb.append("- Do NOT assume the candidate meant something correct if they said something wrong.\n");
+    sb.append("- Scores of 70+ must be EARNED by clear, accurate, reasonably complete answers.\n");
+    sb.append("- Scores above 85 are rare. Only give them if the answer is genuinely impressive.\n\n");
+
+    // ── Experience-level context ──
+    if (fresher) {
+        sb.append("EXPERIENCE CONTEXT: This is a FRESHER. Score on conceptual clarity and fundamentals.\n");
+        sb.append("A fresher who explains a concept correctly in simple terms deserves a fair score.\n");
+        sb.append("A fresher who says something completely wrong or irrelevant still scores below 30 — being a fresher is not an excuse for a wrong answer.\n\n");
+    } else {
+        sb.append("EXPERIENCE CONTEXT: This is an EXPERIENCED candidate (")
+                .append(experienceLabel(experienceLevel)).append(").\n");
+        sb.append("Hold them to a higher standard. Vague or surface-level answers from an experienced candidate score below 45.\n");
+        sb.append("They are expected to show depth, tradeoffs, and real-world reasoning — not just textbook definitions.\n\n");
+    }
+
+    // ── Category scoring instructions ──
+    sb.append("=== CATEGORY SCORING RULES ===\n\n");
+    sb.append("Score ONLY these categories where the candidate actually gave answers:\n");
+    sb.append("  Scorable: ").append(String.join(", ", scorableCategories)).append("\n\n");
+
+    if (!unansweredCategories.isEmpty()) {
+        sb.append("These categories were NOT attempted by the candidate — you MUST set them to 0 in your output:\n");
+        sb.append("  Zero (not attempted): ").append(String.join(", ", unansweredCategories)).append("\n\n");
+    }
+
+    sb.append("IMPORTANT:\n");
+    sb.append("- Do NOT invent or hallucinate scores for unanswered categories.\n");
+    sb.append("- Do NOT add any category key that is not in the full list below.\n");
+    sb.append("- Every category in the full list must appear in your JSON output.\n");
+    sb.append("- Full category list (all must appear): ")
+            .append(String.join(", ", allowedCategories)).append("\n\n");
+
+    // ── Dimension + overall scoring ──
+    sb.append("=== OUTPUT FORMAT ===\n\n");
+    sb.append("Score each dimension based ONLY on answered questions:\n");
+    sb.append("- technical: role-specific technical knowledge and accuracy\n");
+    sb.append("- communication: how clearly and coherently they expressed their answers\n");
+    sb.append("- problemSolving: logical thinking, structured reasoning, approach to problems\n");
+    sb.append("- roleDepth: depth of understanding specific to the ").append(roleLabel).append(" role\n\n");
+
+    sb.append("For 'overall': compute a weighted average across ALL categories in the full list.\n");
+    sb.append("Unanswered categories count as 0 and MUST drag the overall score down proportionally.\n");
+    sb.append("Example: if 1 of 4 categories was answered and scored 70, overall must be around 17–18, NOT 70.\n\n");
+
+    sb.append("Return ONLY valid JSON, no markdown, no explanation:\n");
+    sb.append("{\"technical\":45,\"communication\":60,\"problemSolving\":38,\"roleDepth\":42,\"overall\":18,\n");
+    sb.append("\"categories\":{\"")
+            .append(scorableCategories.get(0)).append("\":55");
+    unansweredCategories.forEach(c -> sb.append(",\"").append(c).append("\":0"));
+    sb.append("}}\n\n");
+    sb.append("Do not add any text outside the JSON object.");
+
+    String systemPrompt = "You are a brutally honest, strict interview evaluator at a top product-based company like Google or Amazon. "
+            + "Your job is to score candidates accurately — not to make them feel good. "
+            + "You have seen hundreds of interviews. You know exactly what a wrong answer looks like versus a correct one. "
+            + "You NEVER inflate scores. A wrong answer is a wrong answer regardless of how confidently it was said. "
+            + "Unanswered categories are 0 — you never invent scores for questions the candidate did not attempt. "
+            + "The overall score must reflect the full interview, not just the attempted portion. "
+            + "Return only valid JSON.";
+
+    try {
+        String raw = callGeminiWithTemp(sb.toString(), systemPrompt, 0.1,
+                userId, interviewId, "score_calculation");
+
+        Map<String, Object> result = parseJsonObjectOrThrow(raw);
+
+        // ── Post-process safety net: force unanswered categories to 0 ──
+        // Even if Gemini hallucinated a score, we enforce 0 here
+        if (result.get("categories") instanceof Map<?, ?> cats) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> categoryScores = (Map<String, Object>) cats;
+            unansweredCategories.forEach(c -> categoryScores.put(c, 0));
+
+            // Recompute overall as true average across ALL categories
+            if (!allowedCategories.isEmpty()) {
+                double trueOverall = allowedCategories.stream()
+                        .mapToDouble(c -> {
+                            Object val = categoryScores.get(c);
+                            if (val instanceof Number n) return n.doubleValue();
+                            return 0.0;
+                        })
+                        .average()
+                        .orElse(0.0);
+                result.put("overall", (int) Math.round(trueOverall));
+            }
+        }
+
+        return result;
+
+    } catch (GeminiQuotaException | GeminiUnavailableException e) {
+        log.warn("Gemini unavailable while scoring: {}", e.getMessage());
+        throw e;
+    }
+}
     // ── Interviewer System Prompt Builder ──
 
   
