@@ -28,7 +28,7 @@ public class QuestionGenerationRules {
           + " interviewer at a top tech company like Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. "
           + "You are conducting a campus or entry-level interview. "
           + "Your style is warm, patient, and encouraging — you want to understand how the candidate THINKS, not just what they know. "
-          + "You ask like a real campus interviewer: introduction first, then fundamentals, concept clarity, small tricky checks, simple scenarios, project discussion, and beginner problem solving. "
+          + "Your generated question set covers bookish/conceptual fundamentals, definition checks, concept clarity, small tricky checks, simple scenarios, project discussion, and beginner problem solving. "
           + "You ask questions that test curiosity, fundamentals, and potential — including trending questions asked at top companies. "
           + "You avoid jargon that requires years of production experience. "
           + "You sound like a human colleague, not a textbook. Never sound robotic or list-like. "
@@ -38,9 +38,9 @@ public class QuestionGenerationRules {
           + " interviewer at a top tech company like Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. "
           + "You conduct senior-level interviews. "
           + "Your style is direct, professional, and intellectually curious — you probe for depth, tradeoffs, and real judgment. "
-          + "You ask questions the way a senior engineer or engineering manager would in a real interview room: quick introduction, deep fundamentals, tricky edge cases, scenario tradeoffs, resume/project ownership, and behavioral judgment. "
+          + "Your generated question set covers crisp conceptual checks, deep fundamentals, tricky edge cases, scenario tradeoffs, resume/project ownership, and behavioral judgment. "
           + "You include trending, most-asked questions from companies like Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. "
-          + "You are never generic. You never ask textbook-style list questions. "
+          + "You are never generic. You may ask definition/comparison questions, but you do not ask lazy list-only questions. "
           + "You sound like a smart human peer who has seen a lot of systems and candidates.";
     }
   }
@@ -59,9 +59,9 @@ public class QuestionGenerationRules {
               You MUST generate questions spread across these 5 buckets (distribution below):
 
               BUCKET 1 — FUNDAMENTALS (%d questions):
-              Test raw conceptual knowledge. Phrased conversationally, not like a textbook.
-              Ask "how does X actually work", "what's the difference between X and Y", "what happens when".
-              Include at least one question that checks concept understanding without needing a resume/project example.
+              Test raw conceptual and bookish knowledge. These are allowed to be direct real-interview questions.
+              Ask "what is X", "how does X actually work", "what's the difference between X and Y", "what happens when".
+              Include multiple questions that check concept understanding without needing a resume/project example.
               These must be trending fundamentals asked at top tech companies for this role.
 
               BUCKET 2 — TRICKY / GOTCHA (%d questions):
@@ -78,7 +78,7 @@ public class QuestionGenerationRules {
               Reference actual skills/projects from their resume naturally.
 
               BUCKET 5 — BEHAVIORAL / CURIOSITY (%d questions):
-              The first question should be a natural introduction/warm-up: ask them to introduce themselves and connect their interest to this role.
+              Ask how they think, how they learn, and how they handle challenges.
               How they think, how they learn, how they handle challenges.
               "When you get stuck...", "Is there something in [tech] you tried recently..."
 
@@ -89,7 +89,9 @@ public class QuestionGenerationRules {
               - Avoid "in your current role", "in production", "your team", "scaling to millions"
               - Vary openers across all questions — no two questions should start the same way
               - Warm and encouraging tone — campus-style interview feel
-              - Freshers should get mostly fundamentals, concepts, tricky basics, and project explanation; only a few scenarios
+              - Freshers should get mostly fundamentals, bookish concepts, tricky basics, and project explanation; only a few scenarios
+              - Do not make all fresher questions resume/project/scenario based
+              - At least 50 percent of fresher TEXT questions must be standalone conceptual or tricky conceptual questions
               - Mix the buckets in the output array (do not cluster them)
               - Include trending questions actually asked in tech company interviews for this role
               """,
@@ -120,7 +122,7 @@ public class QuestionGenerationRules {
           "Walk me through a time you...", "What would you do differently..."
 
           BUCKET 5 — BEHAVIORAL / LEADERSHIP (%d questions):
-          The first question should be a concise introduction/warm-up about their background and role-relevant experience.
+          Test judgment, conflict resolution, and engineering maturity.
           Test judgment, conflict resolution, and engineering maturity.
           "Tell me about a time...", "How do you decide...", "Your team disagrees..."
 
@@ -135,6 +137,105 @@ public class QuestionGenerationRules {
           - Include trending questions actually asked in real interviews at top tech companies for this role
           """, expLabel, fundamentalsCount, trickyCount, scenarioCount, projectCount, behavioralCount, roleExamples);
     }
+  }
+
+  public String getConceptDrillExamples(String role, boolean fresher) {
+    return switch (role) {
+      case "java_developer" -> """
+          CONCEPT DRILLS: "What is @RestController in Spring Boot?", "What is the difference between fail-fast and fail-safe iterators?", "What is the difference between HashMap and ConcurrentHashMap?", "What is polymorphism in Java?"
+          """;
+      case "python_developer" -> """
+          CONCEPT DRILLS: "What is the difference between list, tuple, set, and dictionary?", "What is a decorator in Python?", "What is the GIL?", "What is the difference between shallow copy and deep copy?"
+          """;
+      case "dotnet_developer", "csharp_developer" -> """
+          CONCEPT DRILLS: "What is dependency injection in ASP.NET Core?", "What is the difference between struct and class in C#?", "What is async/await?", "What is middleware in .NET?"
+          """;
+      case "nodejs_developer" -> """
+          CONCEPT DRILLS: "What is the event loop in Node.js?", "What is middleware in Express?", "What is the difference between require and import?", "What is callback hell?"
+          """;
+      case "react_developer" -> """
+          CONCEPT DRILLS: "What is the virtual DOM?", "What is the difference between props and state?", "What is useEffect used for?", "What is controlled vs uncontrolled component?"
+          """;
+      case "angular_developer" -> """
+          CONCEPT DRILLS: "What is dependency injection in Angular?", "What is the difference between component and directive?", "What is RxJS Observable?", "What is lazy loading?"
+          """;
+      case "frontend_engineer" -> """
+          CONCEPT DRILLS: "What is event bubbling?", "What is the difference between localStorage and sessionStorage?", "What is the CSS box model?", "What is CORS?"
+          """;
+      case "backend_engineer" -> """
+          CONCEPT DRILLS: "What is REST?", "What is idempotency?", "What is the difference between authentication and authorization?", "What is database indexing?"
+          """;
+      case "full_stack_developer" -> """
+          CONCEPT DRILLS: "What happens from clicking a button in the UI to saving data in the database?", "What is REST API?", "What is JWT?", "What is the difference between client-side and server-side rendering?"
+          """;
+      case "software_engineer" -> """
+          CONCEPT DRILLS: "What is OOP?", "What is the difference between stack and heap?", "What is time complexity?", "What is the difference between interface and abstract class?"
+          """;
+      case "data_analyst" -> """
+          CONCEPT DRILLS: "What is the difference between INNER JOIN and LEFT JOIN?", "What is a KPI?", "What is correlation vs causation?", "What is a window function?"
+          """;
+      case "sql_developer" -> """
+          CONCEPT DRILLS: "What is normalization?", "What is an index?", "What is the difference between WHERE and HAVING?", "What is a primary key vs foreign key?"
+          """;
+      case "data_scientist" -> """
+          CONCEPT DRILLS: "What is overfitting?", "What is p-value?", "What is precision vs recall?", "What is the bias-variance tradeoff?"
+          """;
+      case "data_engineer" -> """
+          CONCEPT DRILLS: "What is ETL vs ELT?", "What is partitioning?", "What is batch vs streaming?", "What is data warehouse vs data lake?"
+          """;
+      case "ai_engineer" -> """
+          CONCEPT DRILLS: "What is model evaluation?", "What is embedding?", "What is inference?", "What is the difference between rule-based logic and AI-based prediction?"
+          """;
+      case "generative_ai_engineer" -> """
+          CONCEPT DRILLS: "What is RAG?", "What is tokenization?", "What is temperature in LLM output?", "What is prompt injection?"
+          """;
+      case "machine_learning_engineer" -> """
+          CONCEPT DRILLS: "What is train-validation-test split?", "What is feature engineering?", "What is model drift?", "What is cross-validation?"
+          """;
+      case "prompt_engineer" -> """
+          CONCEPT DRILLS: "What is few-shot prompting?", "What is system prompt vs user prompt?", "What is hallucination?", "What is prompt chaining?"
+          """;
+      case "devops_engineer" -> """
+          CONCEPT DRILLS: "What is CI/CD?", "What is Docker image vs container?", "What is Kubernetes pod?", "What is infrastructure as code?"
+          """;
+      case "cloud_engineer", "aws_engineer", "azure_engineer" -> """
+          CONCEPT DRILLS: "What is VPC?", "What is IAM?", "What is load balancing?", "What is horizontal vs vertical scaling?"
+          """;
+      case "cybersecurity_analyst" -> """
+          CONCEPT DRILLS: "What is phishing?", "What is encryption vs hashing?", "What is least privilege?", "What is vulnerability vs threat?"
+          """;
+      case "qa_automation_engineer", "sdet" -> """
+          CONCEPT DRILLS: "What is regression testing?", "What is smoke vs sanity testing?", "What is Selenium WebDriver?", "What is flaky test?"
+          """;
+      case "mobile_developer" -> """
+          CONCEPT DRILLS: "What is activity lifecycle?", "What is main thread?", "What is local storage in mobile apps?", "What is push notification?"
+          """;
+      case "software_architect" -> """
+          CONCEPT DRILLS: "What is monolith vs microservices?", "What is CAP theorem?", "What is separation of concerns?", "What is event-driven architecture?"
+          """;
+      case "engineering_manager" -> """
+          CONCEPT DRILLS: "What is sprint planning?", "What is one-on-one?", "What is psychological safety?", "What is performance feedback?"
+          """;
+      case "product_manager" -> """
+          CONCEPT DRILLS: "What is MVP?", "What is roadmap?", "What is north-star metric?", "What is product-market fit?"
+          """;
+      case "business_analyst" -> """
+          CONCEPT DRILLS: "What is BRD vs FRD?", "What is user story?", "What is acceptance criteria?", "What is stakeholder analysis?"
+          """;
+      case "ui_ux_designer" -> """
+          CONCEPT DRILLS: "What is user persona?", "What is wireframe vs prototype?", "What is design system?", "What is usability testing?"
+          """;
+      case "hr_recruiter" -> """
+          CONCEPT DRILLS: "What is sourcing?", "What is screening?", "What is offer negotiation?", "What is candidate experience?"
+          """;
+      default -> fresher
+          ? """
+              CONCEPT DRILLS: "What is one core concept in this role?", "What is the difference between two common tools in this role?", "What is one basic term every fresher should know?", "What is a common beginner mistake?"
+              """
+          : """
+              CONCEPT DRILLS: "What is one core concept people often misunderstand in this role?", "What tradeoff hides behind a common term in this role?", "What is a senior-level gotcha in this domain?"
+              """;
+    };
   }
 
   private String getRoleBucketExamples(String role, boolean fresher) {

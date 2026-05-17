@@ -409,6 +409,7 @@ public class GeminiService {
                 Rules:
                 - Transcribe ONLY the words actually spoken in the audio.
                 - If the audio contains silence, background noise, music, or no human speech, output exactly: [EMPTY]
+                - Never return like this: e.g. I'm sorry, but I cannot provide a transcript for the audio you've provided. It appears to contain only background noise and no discernible human speech. Therefore, according to the rules, I must output: [EMPTY]
                 - Do NOT generate, infer, complete, summarize, or answer anything.
                 - Do NOT use your own knowledge of any topic under any circumstance.
                 - Preserve filler words, repetitions, incomplete sentences, and code-switching exactly as spoken.
@@ -513,6 +514,8 @@ private String stripAudioTranscriptionArtifacts(String value) {
             || text.equalsIgnoreCase("empty string")
             || text.equalsIgnoreCase("(empty)")
             || text.equalsIgnoreCase("no speech")
+            || text.contains("[EMPTY]")
+            || text.contains("empty")
             || text.equalsIgnoreCase("no candidate speech")
             || text.equalsIgnoreCase("no answer")) {
         return "";
@@ -649,6 +652,7 @@ private String guardHallucinatedAnswer(String transcript, String question) {
         String roleLabel = roleLabel(role);
         String expLabel = experienceLabel(experienceLevel);
         String normalizedRole = normalizeRole(role);
+        String conceptDrills = questionGenerationRules.getConceptDrillExamples(normalizedRole, fresher);
 
         // Determine coding questions
         boolean hasCoding = roleRequiresCoding(role);
@@ -672,15 +676,15 @@ private String guardHallucinatedAnswer(String transcript, String question) {
         int behavioralCount;
 
         if (fresher) {
-            fundamentalsCount = Math.round(textCount * 0.45f);
-            trickyCount       = Math.round(textCount * 0.20f);
-            scenarioCount     = Math.round(textCount * 0.15f);
+            fundamentalsCount = Math.round(textCount * 0.50f);
+            trickyCount       = Math.round(textCount * 0.25f);
+            scenarioCount     = Math.round(textCount * 0.10f);
             projectCount      = Math.round(textCount * 0.10f);
             behavioralCount   = textCount - fundamentalsCount - trickyCount - scenarioCount - projectCount;
         } else {
-            fundamentalsCount = Math.round(textCount * 0.25f);
-            trickyCount       = Math.round(textCount * 0.15f);
-            scenarioCount     = Math.round(textCount * 0.25f);
+            fundamentalsCount = Math.round(textCount * 0.30f);
+            trickyCount       = Math.round(textCount * 0.20f);
+            scenarioCount     = Math.round(textCount * 0.20f);
             projectCount      = Math.round(textCount * 0.20f);
             behavioralCount   = textCount - fundamentalsCount - trickyCount - scenarioCount - projectCount;
         }
@@ -697,13 +701,14 @@ private String guardHallucinatedAnswer(String transcript, String question) {
         boolean initialGeneration = callType == null || callType.contains("initial");
         String flowInstructions = initialGeneration
                 ? "REAL INTERVIEW FLOW RULES:\n"
-                + "- The first TEXT question must be a short warm-up introduction question, like a real interviewer asking the candidate to introduce themselves.\n"
-                + "- After the introduction, move through fundamentals, concept understanding, tricky/gotcha checks, small scenarios, resume/project depth, and behavioral questions.\n"
+                + "- Do NOT generate any introduction, warm-up, background, or 'tell me about yourself' question.\n"
+                + "- Generate only technical/conceptual/tricky/scenario/project/behavioral questions that come after the backend intro question.\n"
                 : "REAL INTERVIEW CONTINUATION RULES:\n"
-                + "- Continue from the questions already asked. Do not ask another introduction question.\n"
+                + "- Continue from the questions already asked. Do NOT ask any introduction, warm-up, background, or 'tell me about yourself' question.\n"
                 + "- Keep the remaining questions varied across fundamentals, concept understanding, tricky/gotcha checks, scenarios, resume/project depth, and behavioral judgment.\n";
         flowInstructions += "- Do not over-personalize every question from the resume. Resume/project questions are only one part of the interview.\n"
                 + "- For freshers, prioritize college-placement style fundamentals, concept clarity, simple tricky questions, beginner coding/problem-solving, and project explanation.\n"
+                + "- For freshers, include direct bookish/conceptual questions like definitions, differences, annotations, lifecycle, joins, indexes, testing terms, cloud basics, or role-specific vocabulary.\n"
                 + "- For freshers, avoid production ownership language unless their resume clearly shows real work experience.\n\n";
 
         String prompt = String.format(
@@ -712,6 +717,7 @@ private String guardHallucinatedAnswer(String transcript, String question) {
                 "Candidate profile from resume (use this to personalize questions — reference actual skills, tools, and projects from the resume where relevant):\n%s\n\n" +
                 "Already asked questions (DO NOT repeat or ask similar ones):\n- %s\n\n" +
                 "%s\n\n" +
+                "Role-specific conceptual/bookish question examples (DO NOT copy verbatim every time; use this to understand the expected style):\n%s\n\n" +
                 "Generate exactly %d TEXT questions and %d CODING questions.\n" +
                 "Allowed categories: %s\n\n" +
                 "%s\n\n" +
@@ -720,6 +726,9 @@ private String guardHallucinatedAnswer(String transcript, String question) {
                 "- Include 40 percent trending, most-asked questions from top tech companies Tata Consultancy Services (TCS), Infosys, Wipro, Accenture, Cognizant etc. relevant to this role and experience level.\n" +
                 "- Each question must sound like a real human interviewer saying it out loud — natural, conversational, not robotic.\n" +
                 "- Mix question types: fundamentals, tricky/gotcha, scenario-based, resume/project-based, and behavioral — as per the bucket distribution above.\n" +
+                "- Standalone conceptual questions are REQUIRED. Do not convert every concept into a scenario or resume/project question.\n" +
+                "- Use real interview concept checks such as 'What is X?', 'What is the difference between X and Y?', 'How does X work?', and 'When would X fail?'\n" +
+                "- For freshers, conceptual + tricky conceptual questions must dominate the TEXT question set.\n" +
                 "- DO NOT mention 'resume', 'your profile', 'as per your CV' directly in the question text.\n" +
                 "- No bullet-style or list-style questions (e.g. avoid 'List the types of...' — ask it conversationally instead).\n" +
                 "- No repetitive openers across questions — vary them broadly.\n" +
@@ -741,6 +750,7 @@ private String guardHallucinatedAnswer(String transcript, String question) {
                 "- type: text | coding",
                 roleLabel, expLabel, resumeSummary, existing,
                 depthInstructions,
+                conceptDrills,
                 textCount, codingCount, allowed, codingInstructions,
                 flowInstructions,
                 codingLanguageForRole(normalizedRole),
@@ -1280,11 +1290,14 @@ public String correctTranscript(String transcript, String userId, String intervi
 
         if (fresher) {
             fallback.add(Map.of(
-                "question", "Walk me through a project you've built — what was your role and what was the toughest technical part?",
-                "category", "behavioral", "difficulty", "easy", "type", "text"));
+                "question", "What is one core concept in this role that every fresher should know, and how would you explain it simply?",
+                "category", firstNonCommonCategory(categories), "difficulty", "easy", "type", "text"));
             fallback.add(Map.of(
-                "question", "If you had to build a simple REST API for a to-do app, what would you think about first?",
-                "category", "problem_solving", "difficulty", "easy", "type", "text"));
+                "question", "What is the difference between two commonly confused basics in this role, and when would you use each one?",
+                "category", firstNonCommonCategory(categories), "difficulty", "easy", "type", "text"));
+            fallback.add(Map.of(
+                "question", "Walk me through a project you've built - what was your role and what was the toughest technical part?",
+                "category", "behavioral", "difficulty", "easy", "type", "text"));
         } else {
             fallback.add(Map.of(
                 "question", "Tell me about a time you had to make a tough technical decision under pressure — what did you choose and why?",
@@ -1304,6 +1317,15 @@ public String correctTranscript(String transcript, String userId, String intervi
         }
 
         return fallback.stream().limit(Math.max(1, Math.min(count, fallback.size()))).toList();
+    }
+
+    private String firstNonCommonCategory(List<String> categories) {
+        if (categories == null || categories.isEmpty()) return "problem_solving";
+        return categories.stream()
+                .filter(category -> category != null && !category.isBlank())
+                .filter(category -> !"behavioral".equals(category) && !"problem_solving".equals(category))
+                .findFirst()
+                .orElse(categories.get(0));
     }
 
     @SuppressWarnings("unchecked")

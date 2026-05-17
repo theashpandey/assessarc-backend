@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -96,33 +97,18 @@ public class InterviewService {
 
         String interviewId = UUID.randomUUID().toString();
 
-        // Build question list with smart dedup
         List<String> historicalQuestions = collectHistoricalQuestionTexts(uid, null);
-        log.info("Building question set. User has {} historical questions.", historicalQuestions.size());
+        log.info("Preparing fast intro question. User has {} historical questions.", historicalQuestions.size());
 
-        List<Dto.QuestionDto> questions = buildQuestions(
-                resumeSummary, historicalQuestions, interviewRole, experienceLevel, resumeCategories,
-                durationMinutes, uid, interviewId, "initial_question_generation");
-        if (questions.size() < 2) {
-            throw new RuntimeException("Could not generate enough questions. Please try again.");
-        }
-
-        List<Interview.QuestionAnswer> generatedQuestions = questions.stream()
-                .map(q -> Interview.QuestionAnswer.builder()
-                        .questionId(q.getId())
-                        .question(q.getQuestion())
-                        .category(q.getCategory())
-                        .difficulty(q.getDifficulty())
-                        .type(q.getType())
-                        .codingData(toInterviewCodingData(q.getCodingData()))
-                        .answer("")
-                        .feedback("")
-                        .build())
-                .collect(Collectors.toList());
+        List<String> allowedCategories = geminiService.categoriesForInterview(interviewRole, resumeCategories);
+        Set<String> seenQuestionTexts = historicalQuestions.stream()
+                .map(this::normalizeQuestionText)
+                .filter(text -> !text.isBlank())
+                .collect(Collectors.toCollection(HashSet::new));
+        Dto.QuestionDto introQuestion = openingIntroductionQuestion(
+                interviewRole, experienceLevel, allowedCategories, seenQuestionTexts);
         List<Interview.QuestionAnswer> askedQuestions = new ArrayList<>();
-        askedQuestions.add(generatedQuestions.get(0));
-        List<Interview.QuestionAnswer> pooledQuestions =
-                new ArrayList<>(generatedQuestions.subList(1, generatedQuestions.size()));
+        askedQuestions.add(toQuestionAnswer(introQuestion));
 
         Interview interview = Interview.builder()
                 .id(interviewId)
@@ -135,21 +121,53 @@ public class InterviewService {
                 .startedAt(System.currentTimeMillis())
                 .resumeSummary(resumeSummary)
                 .questions(askedQuestions)
-                .questionPool(pooledQuestions)
+                .questionPool(new ArrayList<>())
                 .build();
 
         int newBalance = interviewRepository.saveStartedWithWalletDebit(interview, uid, price);
         log.info("Interview {} started for user {}", interview.getId(), uid);
+        startQuestionPoolGeneration(
+                uid, interviewId, resumeSummary, historicalQuestions, introQuestion.getQuestion(),
+                interviewRole, experienceLevel, resumeCategories, durationMinutes);
 
         return Dto.StartInterviewResponse.builder()
                 .interviewId(interview.getId())
                 .resumeSummary(resumeSummary)
                 .interviewRole(interviewRole)
                 .experienceLevel(experienceLevel)
-                .questions(List.of(questions.get(0)))
+                .questions(List.of(introQuestion))
                 .creditsDeducted(price)
                 .walletBalance(newBalance)
                 .build();
+    }
+
+    private void startQuestionPoolGeneration(String uid, String interviewId, String resumeSummary,
+                                             List<String> historicalQuestions, String introQuestion,
+                                             String interviewRole, String experienceLevel,
+                                             List<String> resumeCategories, int durationMinutes) {
+        List<String> existingTexts = new ArrayList<>(historicalQuestions != null ? historicalQuestions : List.of());
+        if (introQuestion != null && !introQuestion.isBlank()) existingTexts.add(introQuestion);
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                log.info("Generating background question pool for interview {}", interviewId);
+                List<Dto.QuestionDto> questions = buildQuestions(
+                        resumeSummary, existingTexts, interviewRole, experienceLevel, resumeCategories,
+                        durationMinutes, uid, interviewId, "initial_question_generation");
+                List<Interview.QuestionAnswer> pooledQuestions = questions.stream()
+                        .filter(q -> !isOpeningIntroductionQuestion(q.getQuestion()))
+                        .limit(TARGET_QUESTION_COUNT)
+                        .map(this::toQuestionAnswer)
+                        .collect(Collectors.toCollection(ArrayList::new));
+                if (!pooledQuestions.isEmpty()) {
+                    interviewRepository.appendQuestionsToPool(interviewId, pooledQuestions);
+                    log.info("Generated {} background pooled questions for interview {}",
+                            pooledQuestions.size(), interviewId);
+                }
+            } catch (Exception e) {
+                log.error("Background question generation failed for interview {}: {}", interviewId, e.getMessage());
+            }
+        });
     }
 
     private List<Dto.QuestionDto> buildQuestions(String resumeSummary, List<String> existingQuestionTexts,
@@ -236,24 +254,6 @@ public class InterviewService {
         return result;
     }
 
-    private List<Dto.QuestionDto> ensureOpeningIntroductionQuestion(List<Dto.QuestionDto> questions,
-                                                                     String role,
-                                                                     String experienceLevel,
-                                                                     List<String> allowedCategories,
-                                                                     Set<String> seenQuestionTexts) {
-        List<Dto.QuestionDto> reordered = new ArrayList<>(questions);
-        Optional<Dto.QuestionDto> generatedIntro = reordered.stream()
-                .filter(q -> !"coding".equals(q.getType()))
-                .filter(q -> isOpeningIntroductionQuestion(q.getQuestion()))
-                .findFirst();
-
-        Dto.QuestionDto intro = generatedIntro.orElseGet(() ->
-                openingIntroductionQuestion(role, experienceLevel, allowedCategories, seenQuestionTexts));
-        generatedIntro.ifPresent(reordered::remove);
-        reordered.add(0, intro);
-        return reordered;
-    }
-
     private boolean isOpeningIntroductionQuestion(String question) {
         String normalized = normalizeQuestionText(question);
         if (normalized.isBlank()) return false;
@@ -270,8 +270,8 @@ public class InterviewService {
         String roleLabel = geminiService.roleLabel(role);
         boolean fresher = geminiService.isFresher(experienceLevel);
         String question = fresher
-                ? "Let's start with you. Could you introduce yourself and tell me what made you interested in the " + roleLabel + " role?"
-                : "Let's start with a quick introduction. Could you walk me through your background and the kind of " + roleLabel + " work you've been doing?";
+            ? "Let's start with a quick introduction. Could you tell me a bit about yourself and your journey so far?"
+            : "Let's start with a quick introduction. Could you walk me through your background and experience so far?";
         String normalized = normalizeQuestionText(question);
         if (!seenQuestionTexts.add(normalized)) {
             question = fresher
@@ -523,6 +523,15 @@ public class InterviewService {
                     .questionIndex(pooledIndex)
                     .build();
         }
+        pooledIndex = waitForBackgroundPooledQuestion(interview.getId());
+        if (pooledIndex >= 0) {
+            Interview refreshed = interviewRepository.findById(interview.getId())
+                    .orElseThrow(() -> new RuntimeException("Interview not found"));
+            return Dto.NextQuestionResponse.builder()
+                    .question(toQuestionDto(refreshed.getQuestions().get(pooledIndex)))
+                    .questionIndex(pooledIndex)
+                    .build();
+        }
 
         List<Interview.QuestionAnswer> existing = interview.getQuestions() != null
                 ? interview.getQuestions() : List.of();
@@ -568,6 +577,20 @@ public class InterviewService {
         return nextQuestion(uid, req);
     }
 
+    private int waitForBackgroundPooledQuestion(String interviewId) {
+        for (int attempt = 0; attempt < 8; attempt++) {
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return -1;
+            }
+            int pooledIndex = interviewRepository.moveNextPooledQuestionToAsked(interviewId);
+            if (pooledIndex >= 0) return pooledIndex;
+        }
+        return -1;
+    }
+
     private List<String> collectHistoricalQuestionTexts(String uid, String excludeInterviewId) {
         return interviewRepository.findRecentCompletedByUserId(uid, HISTORICAL_INTERVIEW_LOOKBACK).stream()
                 .filter(i -> excludeInterviewId == null || !excludeInterviewId.equals(i.getId()))
@@ -589,6 +612,19 @@ public class InterviewService {
                 .difficulty(qa.getDifficulty())
                 .type(qa.getType() != null ? qa.getType() : "text")
                 .codingData(toDtoCodingData(qa.getCodingData()))
+                .build();
+    }
+
+    private Interview.QuestionAnswer toQuestionAnswer(Dto.QuestionDto q) {
+        return Interview.QuestionAnswer.builder()
+                .questionId(q.getId())
+                .question(q.getQuestion())
+                .category(q.getCategory())
+                .difficulty(q.getDifficulty())
+                .type(q.getType())
+                .codingData(toInterviewCodingData(q.getCodingData()))
+                .answer("")
+                .feedback("")
                 .build();
     }
 
