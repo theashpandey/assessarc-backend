@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
 public class InterviewRepository {
 
     private static final String COLLECTION = "interviews";
+    private static final String QUESTIONS_SUBCOLLECTION = "questions";
+    private static final String ANSWERS_SUBCOLLECTION = "answers";
     private static final String USERS_COLLECTION = "users";
     private static final String WALLET_TRANSACTIONS_COLLECTION = "wallet_transactions";
     private final Firestore firestore;
@@ -47,6 +49,7 @@ public class InterviewRepository {
             }
             Interview iv = doc.toObject(Interview.class);
             if (iv != null) iv.setId(doc.getId());
+            hydrateQuestionAnswers(id, iv);
             return Optional.ofNullable(iv);
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error fetching interview {}: {}", id, e.getMessage());
@@ -62,7 +65,10 @@ public class InterviewRepository {
             return docs.stream()
                     .map(d -> {
                         Interview iv = d.toObject(Interview.class);
-                        if (iv != null) iv.setId(d.getId());
+                        if (iv != null) {
+                            iv.setId(d.getId());
+                            hydrateQuestionAnswers(d.getId(), iv);
+                        }
                         return iv;
                     })
                     .filter(Objects::nonNull)
@@ -109,10 +115,13 @@ public class InterviewRepository {
             List<Interview> result = docs.stream()
                     .map(d -> {
                         try {
-                            Interview iv = d.toObject(Interview.class);
-                            if (iv != null) iv.setId(d.getId());
-                            return iv;
-                        } catch (Exception e) {
+                        Interview iv = d.toObject(Interview.class);
+                        if (iv != null) {
+                            iv.setId(d.getId());
+                            hydrateQuestionAnswers(d.getId(), iv);
+                        }
+                        return iv;
+                    } catch (Exception e) {
                             log.error("Failed to deserialize interview doc {}: {}", d.getId(), e.getMessage());
                             return null;
                         }
@@ -182,11 +191,29 @@ public class InterviewRepository {
                         .createdAt(now)
                         .build();
 
+                List<Interview.QuestionAnswer> initialQuestions = interview.getQuestions() != null
+                        ? new ArrayList<>(interview.getQuestions()) : new ArrayList<>();
+                Interview storedInterview = Interview.builder()
+                        .id(interview.getId())
+                        .userId(interview.getUserId())
+                        .status(interview.getStatus())
+                        .durationMinutes(interview.getDurationMinutes())
+                        .interviewRole(interview.getInterviewRole())
+                        .experienceLevel(interview.getExperienceLevel())
+                        .creditsDeducted(interview.getCreditsDeducted())
+                        .startedAt(interview.getStartedAt())
+                        .resumeSummary(interview.getResumeSummary())
+                        .questions(List.of())
+                        .questionPool(List.of())
+                        .askedQuestionCount(initialQuestions.size())
+                        .build();
+
                 transaction.update(userRef,
                         "purchasedCredits", purchasedAfter,
                         "bonusCredits", bonusAfter,
                         "walletCredits", balanceAfter);
-                transaction.set(interviewRef, interview);
+                transaction.set(interviewRef, storedInterview);
+                writeQuestionDocs(transaction, interviewRef, initialQuestions, 0);
                 transaction.set(txRef, walletTx);
                 return balanceAfter;
             }).get();
@@ -217,21 +244,21 @@ public class InterviewRepository {
                 if (!snap.exists()) throw new RuntimeException("Interview not found: " + interviewId);
 
                 Interview iv = snap.toObject(Interview.class);
-                if (iv == null || iv.getQuestions() == null
-                        || questionIndex >= iv.getQuestions().size()) {
+                if (iv == null) {
                     throw new RuntimeException("Invalid question index: " + questionIndex);
                 }
 
-                var qa = iv.getQuestions().get(questionIndex);
+                long now = System.currentTimeMillis();
+                Interview.QuestionAnswer qa = readQuestionInTransaction(tx, docRef, iv, questionIndex);
                 qa.setAnswer(answer);
                 qa.setFeedback(feedback);
-                qa.setAnswerTimestamp(System.currentTimeMillis());
+                qa.setAnswerTimestamp(now);
                 if (answerTrace != null) {
                     qa.setAnswerTrace(answerTrace);
                 }
-                iv.getQuestions().set(questionIndex, qa);
 
-                tx.set(docRef, iv);
+                tx.set(docRef.collection(ANSWERS_SUBCOLLECTION).document(String.valueOf(questionIndex)), qa);
+                tx.update(docRef, "lastAnswerUpdatedAt", now);
                 return null;
             }).get();
         } catch (InterruptedException | ExecutionException e) {
@@ -249,19 +276,19 @@ public class InterviewRepository {
                 if (!snap.exists()) throw new RuntimeException("Interview not found: " + interviewId);
 
                 Interview iv = snap.toObject(Interview.class);
-                if (iv == null || iv.getQuestions() == null
-                        || questionIndex >= iv.getQuestions().size()) {
+                if (iv == null) {
                     throw new RuntimeException("Invalid question index: " + questionIndex);
                 }
 
-                var qa = iv.getQuestions().get(questionIndex);
+                long now = System.currentTimeMillis();
+                Interview.QuestionAnswer qa = readQuestionInTransaction(tx, docRef, iv, questionIndex);
                 qa.setCodingSubmission(codingSubmission);
                 qa.setAnswer(codingSubmission.getCode());
                 qa.setFeedback(codingSubmission.getAiEvaluation());
-                qa.setAnswerTimestamp(System.currentTimeMillis());
-                iv.getQuestions().set(questionIndex, qa);
+                qa.setAnswerTimestamp(now);
 
-                tx.set(docRef, iv);
+                tx.set(docRef.collection(ANSWERS_SUBCOLLECTION).document(String.valueOf(questionIndex)), qa);
+                tx.update(docRef, "lastAnswerUpdatedAt", now);
                 return null;
             }).get();
         } catch (InterruptedException | ExecutionException e) {
@@ -283,14 +310,14 @@ public class InterviewRepository {
                         ? new ArrayList<>(iv.getQuestionPool()) : new ArrayList<>();
                 if (pool.isEmpty()) return -1;
 
-                List<Interview.QuestionAnswer> questions = iv.getQuestions() != null
-                        ? new ArrayList<>(iv.getQuestions()) : new ArrayList<>();
-                questions.add(pool.remove(0));
-                iv.setQuestions(questions);
-                iv.setQuestionPool(pool);
+                int nextIndex = Math.max(0, iv.getAskedQuestionCount());
+                Interview.QuestionAnswer nextQuestion = pool.remove(0);
 
-                tx.set(docRef, iv);
-                return questions.size() - 1;
+                tx.update(docRef,
+                        "questionPool", pool,
+                        "askedQuestionCount", nextIndex + 1);
+                tx.set(docRef.collection(QUESTIONS_SUBCOLLECTION).document(String.valueOf(nextIndex)), nextQuestion);
+                return nextIndex;
             }).get();
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error moving pooled question for interview {}: {}", interviewId, e.getMessage());
@@ -310,9 +337,7 @@ public class InterviewRepository {
                 List<Interview.QuestionAnswer> pool = iv.getQuestionPool() != null
                         ? new ArrayList<>(iv.getQuestionPool()) : new ArrayList<>();
                 pool.addAll(newQuestions);
-                iv.setQuestionPool(pool);
-
-                tx.set(docRef, iv);
+                tx.update(docRef, "questionPool", pool);
                 return null;
             }).get();
         } catch (InterruptedException | ExecutionException e) {
@@ -344,7 +369,6 @@ public class InterviewRepository {
         try {
             Map<String, Object> updates = new HashMap<>();
             updates.put("status", "ANALYSIS_PENDING");
-            updates.put("questions", askedQuestions);
             updates.put("questionPool", List.of());
             updates.put("scores", null);
             updates.put("completedAt", completedAt);
@@ -366,6 +390,112 @@ public class InterviewRepository {
             log.error("Error saving analysis for interview {}: {}", interviewId, e.getMessage());
             throw new RuntimeException("Failed to save interview analysis", e);
         }
+    }
+
+    public void updateResumeSummary(String interviewId, String resumeSummary) {
+        try {
+            firestore.collection(COLLECTION).document(interviewId)
+                    .update("resumeSummary", resumeSummary).get();
+        } catch (InterruptedException | ExecutionException e) {
+            log.warn("Could not update resume summary for interview {}: {}", interviewId, e.getMessage());
+        }
+    }
+
+    private void hydrateQuestionAnswers(String interviewId, Interview interview) {
+        if (interview == null) return;
+        try {
+            var docRef = firestore.collection(COLLECTION).document(interviewId);
+            List<Interview.QuestionAnswer> questions = interview.getQuestions() != null
+                    ? new ArrayList<>(interview.getQuestions()) : new ArrayList<>();
+
+            List<QueryDocumentSnapshot> questionDocs = docRef.collection(QUESTIONS_SUBCOLLECTION).get().get().getDocuments();
+            for (QueryDocumentSnapshot doc : questionDocs) {
+                int index = parseIndex(doc.getId());
+                if (index < 0) continue;
+                ensureSize(questions, index + 1);
+                Interview.QuestionAnswer question = doc.toObject(Interview.QuestionAnswer.class);
+                if (question != null) {
+                    Interview.QuestionAnswer existing = questions.get(index);
+                    questions.set(index, mergeQuestionAndAnswer(question, existing));
+                }
+            }
+
+            List<QueryDocumentSnapshot> answerDocs = docRef.collection(ANSWERS_SUBCOLLECTION).get().get().getDocuments();
+            for (QueryDocumentSnapshot doc : answerDocs) {
+                int index = parseIndex(doc.getId());
+                if (index < 0) continue;
+                ensureSize(questions, index + 1);
+                Interview.QuestionAnswer answer = doc.toObject(Interview.QuestionAnswer.class);
+                if (answer != null) {
+                    Interview.QuestionAnswer existing = questions.get(index);
+                    questions.set(index, mergeQuestionAndAnswer(existing, answer));
+                }
+            }
+
+            interview.setQuestions(questions.stream().filter(Objects::nonNull).collect(Collectors.toList()));
+        } catch (Exception e) {
+            log.warn("Could not hydrate interview subcollections for {}: {}", interviewId, e.getMessage());
+        }
+    }
+
+    private void writeQuestionDocs(com.google.cloud.firestore.Transaction transaction,
+                                   com.google.cloud.firestore.DocumentReference interviewRef,
+                                   List<Interview.QuestionAnswer> questions,
+                                   int startIndex) {
+        if (questions == null || questions.isEmpty()) return;
+        for (int i = 0; i < questions.size(); i++) {
+            transaction.set(interviewRef.collection(QUESTIONS_SUBCOLLECTION)
+                    .document(String.valueOf(startIndex + i)), questions.get(i));
+        }
+    }
+
+    private Interview.QuestionAnswer readQuestionInTransaction(com.google.cloud.firestore.Transaction tx,
+                                                               com.google.cloud.firestore.DocumentReference interviewRef,
+                                                               Interview interview,
+                                                               int questionIndex) throws ExecutionException, InterruptedException {
+        if (questionIndex < 0) {
+            throw new RuntimeException("Invalid question index: " + questionIndex);
+        }
+
+        var questionRef = interviewRef.collection(QUESTIONS_SUBCOLLECTION).document(String.valueOf(questionIndex));
+        var questionSnap = tx.get(questionRef).get();
+        if (questionSnap.exists()) {
+            Interview.QuestionAnswer question = questionSnap.toObject(Interview.QuestionAnswer.class);
+            if (question != null) return question;
+        }
+
+        if (interview.getQuestions() != null && questionIndex < interview.getQuestions().size()) {
+            Interview.QuestionAnswer question = interview.getQuestions().get(questionIndex);
+            if (question != null) return question;
+        }
+
+        throw new RuntimeException("Invalid question index: " + questionIndex);
+    }
+
+    private int parseIndex(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    private void ensureSize(List<Interview.QuestionAnswer> questions, int size) {
+        while (questions.size() < size) {
+            questions.add(null);
+        }
+    }
+
+    private Interview.QuestionAnswer mergeQuestionAndAnswer(Interview.QuestionAnswer question,
+                                                            Interview.QuestionAnswer answer) {
+        if (question == null) return answer;
+        if (answer == null) return question;
+        if (answer.getAnswer() != null) question.setAnswer(answer.getAnswer());
+        if (answer.getFeedback() != null) question.setFeedback(answer.getFeedback());
+        if (answer.getAnswerTimestamp() > 0) question.setAnswerTimestamp(answer.getAnswerTimestamp());
+        if (answer.getAnswerTrace() != null) question.setAnswerTrace(answer.getAnswerTrace());
+        if (answer.getCodingSubmission() != null) question.setCodingSubmission(answer.getCodingSubmission());
+        return question;
     }
 
 }

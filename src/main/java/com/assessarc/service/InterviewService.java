@@ -9,6 +9,7 @@ import com.assessarc.repository.InterviewRepository;
 import com.assessarc.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -17,6 +18,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -35,6 +37,8 @@ public class InterviewService {
     private final UserRepository userRepository;
     private final GeminiService geminiService;
     private final AppProperties props;
+    @Qualifier("interviewTaskExecutor")
+    private final Executor interviewTaskExecutor;
 
     // ── Start Interview ──
     public Dto.StartInterviewResponse startInterview(String uid, Dto.StartInterviewRequest req) {
@@ -88,11 +92,8 @@ public class InterviewService {
         List<String> resumeCategories = user.getResumeCategories();
         if (resumeSummary == null || resumeSummary.isBlank()
                 || resumeCategories == null || resumeCategories.isEmpty()) {
-            log.info("Parsing resume insights for user {}", uid);
-            GeminiService.ResumeInsights insights = geminiService.parseResumeInsights(user.getResumeText(), uid, null);
-            resumeSummary = insights.summary();
-            resumeCategories = insights.categories();
-            userRepository.updateResumeInsights(uid, resumeSummary, resumeCategories);
+            resumeSummary = fallbackResumeSummary(user.getResumeText());
+            resumeCategories = geminiService.categoriesForRole(interviewRole);
         }
 
         String interviewId = UUID.randomUUID().toString();
@@ -122,6 +123,7 @@ public class InterviewService {
                 .resumeSummary(resumeSummary)
                 .questions(askedQuestions)
                 .questionPool(new ArrayList<>())
+                .askedQuestionCount(askedQuestions.size())
                 .build();
 
         int newBalance = interviewRepository.saveStartedWithWalletDebit(interview, uid, price);
@@ -151,8 +153,21 @@ public class InterviewService {
         CompletableFuture.runAsync(() -> {
             try {
                 log.info("Generating background question pool for interview {}", interviewId);
+                String effectiveSummary = resumeSummary;
+                List<String> effectiveCategories = resumeCategories;
+                if (isFallbackResumeSummary(resumeSummary)) {
+                    User user = userRepository.findById(uid).orElse(null);
+                    if (user != null && user.getResumeText() != null && !user.getResumeText().isBlank()) {
+                        GeminiService.ResumeInsights insights = geminiService.parseResumeInsights(
+                                user.getResumeText(), uid, interviewId);
+                        effectiveSummary = insights.summary();
+                        effectiveCategories = insights.categories();
+                        userRepository.updateResumeInsights(uid, effectiveSummary, effectiveCategories);
+                        interviewRepository.updateResumeSummary(interviewId, effectiveSummary);
+                    }
+                }
                 List<Dto.QuestionDto> questions = buildQuestions(
-                        resumeSummary, existingTexts, interviewRole, experienceLevel, resumeCategories,
+                        effectiveSummary, existingTexts, interviewRole, experienceLevel, effectiveCategories,
                         durationMinutes, uid, interviewId, "initial_question_generation");
                 List<Interview.QuestionAnswer> pooledQuestions = questions.stream()
                         .filter(q -> !isOpeningIntroductionQuestion(q.getQuestion()))
@@ -167,7 +182,17 @@ public class InterviewService {
             } catch (Exception e) {
                 log.error("Background question generation failed for interview {}: {}", interviewId, e.getMessage());
             }
-        });
+        }, interviewTaskExecutor);
+    }
+
+    private String fallbackResumeSummary(String resumeText) {
+        String text = resumeText == null ? "" : resumeText.trim();
+        if (text.isBlank()) return "Resume summary pending.";
+        return "[FAST_START_RESUME_EXCERPT] " + text.substring(0, Math.min(1800, text.length()));
+    }
+
+    private boolean isFallbackResumeSummary(String resumeSummary) {
+        return resumeSummary != null && resumeSummary.startsWith("[FAST_START_RESUME_EXCERPT]");
     }
 
     private List<Dto.QuestionDto> buildQuestions(String resumeSummary, List<String> existingQuestionTexts,
@@ -785,7 +810,7 @@ public class InterviewService {
                 }
                 trace.setAudioMimeType(mimeType);
                 String transcript = geminiService.transcribeAnswerAudio(
-                        audio.getBytes(),
+                        audio.getInputStream(),
                         mimeType,
                         currentQ.getQuestion(),
                         interview.getInterviewRole(),

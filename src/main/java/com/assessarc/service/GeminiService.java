@@ -14,6 +14,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,6 +34,7 @@ public class GeminiService {
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
     private final GeminiUsageRepository geminiUsageRepository;
+    private final AiConcurrencyLimiter aiConcurrencyLimiter;
     private volatile GoogleCredentials vertexCredentials;
     private final QuestionGenerationRules questionGenerationRules;
     private static final String DEFAULT_ROLE = "software_engineer";
@@ -278,6 +280,12 @@ public class GeminiService {
 
     public String callGeminiWithTemp(String userPrompt, String systemPrompt, double temperature,
                                      String userId, String interviewId, String callType) {
+        return aiConcurrencyLimiter.call(aiConcurrencyLimiter.laneFor(callType),
+                () -> callGeminiWithTempUnbounded(userPrompt, systemPrompt, temperature, userId, interviewId, callType));
+    }
+
+    private String callGeminiWithTempUnbounded(String userPrompt, String systemPrompt, double temperature,
+                                               String userId, String interviewId, String callType) {
         boolean usageRecorded = false;
         try {
             AppProperties.Vertex vertex = props.getGemini().getVertex();
@@ -376,7 +384,7 @@ public class GeminiService {
             throw new GeminiUnavailableException("AI service is temporarily unavailable. Please try again.");
         }
     }
-    public String transcribeAnswerAudio(byte[] audioBytes,
+    public String transcribeAnswerAudio(InputStream audioStream,
         String mimeType,
         String question,
         String interviewRole,
@@ -384,9 +392,23 @@ public class GeminiService {
         String userId,
         String interviewId) {
 
-    if (audioBytes == null || audioBytes.length == 0) {
+    byte[] audioBytes = readAudioBytes(audioStream);
+    if (audioBytes.length == 0) {
         return "";
     }
+
+    return aiConcurrencyLimiter.call(AiConcurrencyLimiter.Lane.AUDIO_TRANSCRIPTION,
+            () -> transcribeAnswerAudioUnbounded(audioBytes, mimeType, question, interviewRole,
+                    experienceLevel, userId, interviewId));
+}
+
+private String transcribeAnswerAudioUnbounded(byte[] audioBytes,
+        String mimeType,
+        String question,
+        String interviewRole,
+        String experienceLevel,
+        String userId,
+        String interviewId) {
 
     boolean usageRecorded = false;
     String callType = "audio_transcription";
@@ -1205,6 +1227,20 @@ public String correctTranscript(String transcript, String userId, String intervi
                 }
             }
             return vertexCredentials;
+        }
+    }
+
+    private byte[] readAudioBytes(InputStream audioStream) {
+        if (audioStream == null) return new byte[0];
+        try (InputStream in = audioStream; ByteArrayOutputStream out = new ByteArrayOutputStream(1024 * 1024)) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new GeminiUnavailableException("Could not read uploaded audio.");
         }
     }
 

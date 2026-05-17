@@ -30,6 +30,7 @@ public class Interview {
     private String resumeSummary;
     private List<QuestionAnswer> questions;
     private List<QuestionAnswer> questionPool;
+    private int askedQuestionCount;
     private Scores scores;
     private Analysis analysis;
     private String completionMessage;
