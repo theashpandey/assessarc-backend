@@ -152,13 +152,6 @@ public class InterviewService {
                 .build();
     }
 
-    /**
-     * Build question list:
-     * - 50-60% from central question bank (avoiding questions user has seen before)
-     * - Rest generated fresh by AI
-     * - Shuffle so order is not predictable
-     * - No duplicate questions within a session
-     */
     private List<Dto.QuestionDto> buildQuestions(String resumeSummary, List<String> existingQuestionTexts,
                                                  String interviewRole, String experienceLevel,
                                                  List<String> resumeCategories, int durationMinutes,
@@ -232,7 +225,7 @@ public class InterviewService {
             result.add(builder.build());
         }
 
-        result = ensureOpeningIntroductionQuestion(result, interviewRole, experienceLevel, allowedCategories, seenQuestionTexts);
+       // result = ensureOpeningIntroductionQuestion(result, interviewRole, experienceLevel, allowedCategories, seenQuestionTexts);
         result = enforceCodingPlan(result, interviewRole, durationMinutes, allowedCategories, seenQuestionTexts);
 
         if (result.isEmpty()) {

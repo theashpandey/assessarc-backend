@@ -666,7 +666,7 @@ return text;
         boolean initialGeneration = callType == null || callType.contains("initial");
         String flowInstructions = initialGeneration
                 ? "REAL INTERVIEW FLOW RULES:\n"
-                + "- The first TEXT question must be a short warm-up introduction question, like a real interviewer asking the candidate to introduce themselves for this role.\n"
+                + "- The first TEXT question must be a short warm-up introduction question, like a real interviewer asking the candidate to introduce themselves.\n"
                 + "- After the introduction, move through fundamentals, concept understanding, tricky/gotcha checks, small scenarios, resume/project depth, and behavioral questions.\n"
                 : "REAL INTERVIEW CONTINUATION RULES:\n"
                 + "- Continue from the questions already asked. Do not ask another introduction question.\n"
