@@ -564,12 +564,11 @@ private String guardHallucinatedAnswer(String transcript, String question) {
             .filter(lowerTranscript::contains)
             .count();
 
-    // Heuristic: >5 distinct long keywords from the question found in a long
-    // transcript → almost certainly a hallucinated answer, not real speech
+    // Technical answers often repeat terms from the question, so keyword overlap
+    // alone is not safe enough to discard a candidate's spoken answer.
     if (matchCount > 5) {
-        log.warn("Discarding likely hallucinated transcription: length={}, keywordMatches={}",
+        log.warn("Suspicious audio transcription overlap: length={}, keywordMatches={}",
                 transcript.length(), matchCount);
-        return "";
     }
 
     return transcript;

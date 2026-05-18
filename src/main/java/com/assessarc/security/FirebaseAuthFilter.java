@@ -60,10 +60,4 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    // Helper to get current user's UID from security context
-    public static String getCurrentUid() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null) return null;
-        return (String) auth.getPrincipal();
-    }
 }

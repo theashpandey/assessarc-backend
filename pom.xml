@@ -74,12 +74,6 @@
       <artifactId>jackson-databind</artifactId>
     </dependency>
 
-    <!-- Apache Commons for file handling -->
-    <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-lang3</artifactId>
-    </dependency>
-
     <!-- Apache PDFBox for PDF text extraction -->
     <dependency>
       <groupId>org.apache.pdfbox</groupId>

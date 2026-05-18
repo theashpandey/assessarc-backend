@@ -35,6 +35,7 @@ public class Interview {
     private Analysis analysis;
     private String completionMessage;
     private long analysisRetryAfter;
+    private long lastAnswerUpdatedAt;
 
     @Data
     @Builder
